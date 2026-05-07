@@ -1,0 +1,55 @@
+from fastapi import APIRouter, HTTPException
+from app.schemas.auth import UserLogin, UserRegister, TokenResponse
+from app.db.supabase import supabase
+from supabase import create_client
+from app.core.config import settings
+
+router = APIRouter()
+
+@router.post("/register")
+async def register(user_in: UserRegister):
+    try:
+        # Cliente efímero para no mutar la sesión del singleton de Supabase
+        local_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        response = local_supabase.auth.sign_up({
+            "email": user_in.email,
+            "password": user_in.password,
+            "options": {
+                "data": {
+                    "username": user_in.username
+                }
+            }
+        })
+        return {
+            "status": "success",
+            "message": "Usuario registrado exitosamente. Revisa tu correo si tienes confirmación activada.",
+            "user_id": response.user.id if response.user else None
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error al registrar usuario: {str(e)}"
+        )
+
+@router.post("/login", response_model=TokenResponse)
+async def login(user_in: UserLogin):
+    try:
+        # Cliente efímero para no mutar la sesión del singleton de Supabase
+        local_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        response = local_supabase.auth.sign_in_with_password({
+            "email": user_in.email,
+            "password": user_in.password
+        })
+
+        if not response.session:
+            raise HTTPException(status_code=401, detail="Error en inicio de sesión, no se recibió sesión.")
+
+        return TokenResponse(
+            access_token=response.session.access_token,
+            token_type="Bearer"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Credenciales inválidas o error de inicio de sesión: {str(e)}"
+        )
