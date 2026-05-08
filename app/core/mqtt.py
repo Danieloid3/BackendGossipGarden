@@ -26,15 +26,11 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
     try:
         data = json.loads(payload_str)
 
-        # Validar si ya trae el plant_id en el payload (opcional)
+        # Validar que obligatoriamente traiga el plant_id en el payload
         plant_id = data.get("plant_id")
 
-        # Si no lo tiene, intentamos obtenerlo de Supabase basado en el sensor_id
         if not plant_id:
-            plant_id = await get_plant_id_for_sensor(sensor_id)
-
-        if not plant_id:
-            logger.warning(f"Se ignoró la lectura del sensor {sensor_id}: No tiene planta asignada.")
+            logger.warning(f"Se ignoró la lectura del sensor {sensor_id}: No se envió 'plant_id' en el JSON.")
             return
 
         now = datetime.now(timezone.utc)
