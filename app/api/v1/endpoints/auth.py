@@ -53,3 +53,28 @@ async def login(user_in: UserLogin):
             status_code=400,
             detail=f"Credenciales inválidas o error de inicio de sesión: {str(e)}"
         )
+
+@router.get("/google-url")
+async def get_google_auth_url(redirect_to: str = "http://localhost:3000/auth/callback"):
+    """
+    Devuelve la URL a la que el frontend debe redirigir al usuario
+    para iniciar el flujo de OAuth con Google.
+    """
+    try:
+        local_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        response = local_supabase.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": {
+                "redirect_to": redirect_to
+            }
+        })
+
+        return {
+            "status": "success",
+            "url": response.url
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo la URL de Google Auth: {str(e)}"
+        )
