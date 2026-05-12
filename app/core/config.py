@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_JWKS_URL: str
-    FIREBASE_CREDENTIALS_PATH: str
+    FIREBASE_CREDENTIALS_PATH: str = "firebase_credentials.json"
+    FIREBASE_CREDENTIALS_JSON: str | None = None
     REDIS_URL: str
 
     MQTT_ENABLED: bool = False
