@@ -49,6 +49,19 @@ Inicia sesión y obtiene el token JWT (`access_token`).
 }
 ```
 
+### 1.3 `GET /auth/google-url`
+Devuelve la URL a la que el frontend debe redirigir al navegador del usuario para iniciar el flujo de OAuth (inicio de sesión) con Google.
+
+**Query Parameters (Opcional):** `?redirect_to=http://localhost:3000/auth/callback` (URL a la que Google debe devolver al usuario tras autenticarse).
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "url": "https://<tu-proyecto-id>.supabase.co/auth/v1/authorize?provider=google&redirect_to=http://localhost:3000/auth/callback"
+}
+```
+
 ---
 
 ## 🌿 2. Plants (Plantas)
