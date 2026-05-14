@@ -8,6 +8,7 @@ import aiomqtt
 from app.core.config import settings
 from app.db.firebase import firebase_db
 from app.db.supabase import supabase
+from app.services.health_service import calculate_and_save_health
 
 logger = logging.getLogger("gossip_garden.mqtt")
 
@@ -46,6 +47,16 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
             "timestamp": now,
             "expireAt": expire_at
         }
+
+        score, status = await calculate_and_save_health(
+            str(plant_id),
+            doc_data["temperature_c"],
+            doc_data["light_lux"],
+            doc_data["humidity_pct"],
+            doc_data["soil_moisture_pct"]
+        )
+        doc_data["health_score"] = score
+        doc_data["health_status"] = status
 
         # Guardar en Firebase dentro de la subcolección de la planta
         firebase_db.collection("plants").document(str(plant_id)).collection("sensor_readings").add(doc_data)

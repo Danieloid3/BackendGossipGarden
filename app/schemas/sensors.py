@@ -21,4 +21,6 @@ class SensorDataResponse(BaseModel):
     humidity_pct: float
     soil_moisture_pct: float
     light_lux: float
+    health_score: Optional[float] = None
+    health_status: Optional[str] = None
     timestamp: datetime

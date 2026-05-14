@@ -1,6 +1,6 @@
 -- ============================================================
 -- migrations.sql — Gossip Garden
--- Migraciones incrementales unificadas (001 + 002 + 003).
+-- Migraciones incrementales unificadas (001 + 002 + 003 + 004).
 -- Aplicar sobre una BD existente con el esquema legacy.
 -- ============================================================
 
@@ -216,27 +216,19 @@ ALTER TABLE species_care_profiles
   ADD COLUMN IF NOT EXISTS weight_soil_humidity    FLOAT,
   ADD COLUMN IF NOT EXISTS weight_air_humidity     FLOAT,
   ADD COLUMN IF NOT EXISTS weight_temperature      FLOAT,
-  ADD COLUMN IF NOT EXISTS sensitivity_light            TEXT,
-  ADD COLUMN IF NOT EXISTS sensitivity_soil_humidity    TEXT,
-  ADD COLUMN IF NOT EXISTS sensitivity_air_humidity     TEXT,
-  ADD COLUMN IF NOT EXISTS sensitivity_temperature      TEXT;
+  ADD COLUMN IF NOT EXISTS sensitivity_light            TEXT CHECK (sensitivity_light IS NULL OR sensitivity_light IN ('high', 'medium', 'low')),
+  ADD COLUMN IF NOT EXISTS sensitivity_soil_humidity    TEXT CHECK (sensitivity_soil_humidity IS NULL OR sensitivity_soil_humidity IN ('high', 'medium', 'low')),
+  ADD COLUMN IF NOT EXISTS sensitivity_air_humidity     TEXT CHECK (sensitivity_air_humidity IS NULL OR sensitivity_air_humidity IN ('high', 'medium', 'low')),
+  ADD COLUMN IF NOT EXISTS sensitivity_temperature      TEXT CHECK (sensitivity_temperature IS NULL OR sensitivity_temperature IN ('high', 'medium', 'low'));
 
-ALTER TABLE species_care_profiles
-  ADD CONSTRAINT care_weights_light_range
-    CHECK (weight_light IS NULL OR (weight_light BETWEEN 0 AND 1)),
-  ADD CONSTRAINT care_weights_soil_range
-    CHECK (weight_soil_humidity IS NULL OR (weight_soil_humidity BETWEEN 0 AND 1)),
-  ADD CONSTRAINT care_weights_air_range
-    CHECK (weight_air_humidity IS NULL OR (weight_air_humidity BETWEEN 0 AND 1)),
-  ADD CONSTRAINT care_weights_temp_range
-    CHECK (weight_temperature IS NULL OR (weight_temperature BETWEEN 0 AND 1)),
-  ADD CONSTRAINT sensitivity_light_enum
-    CHECK (sensitivity_light IS NULL OR sensitivity_light IN ('high', 'medium', 'low')),
-  ADD CONSTRAINT sensitivity_soil_enum
-    CHECK (sensitivity_soil_humidity IS NULL OR sensitivity_soil_humidity IN ('high', 'medium', 'low')),
-  ADD CONSTRAINT sensitivity_air_enum
-    CHECK (sensitivity_air_humidity IS NULL OR sensitivity_air_humidity IN ('high', 'medium', 'low')),
-  ADD CONSTRAINT sensitivity_temp_enum
-    CHECK (sensitivity_temperature IS NULL OR sensitivity_temperature IN ('high', 'medium', 'low'));
+COMMIT;
+
+-- ============================================================
+-- 004 — Monthly Metrics Health
+-- ============================================================
+
+ALTER TABLE monthly_metrics
+ADD COLUMN IF NOT EXISTS avg_health_score FLOAT,
+ADD COLUMN IF NOT EXISTS health_status_majority VARCHAR;
 
 COMMIT;

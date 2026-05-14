@@ -127,6 +127,8 @@ Authorization: Bearer <access_token>
   "humidity_pct": 55.2,
   "soil_moisture_pct": 45.0,
   "light_lux": 850.0,
+  "health_score": 98.5,
+  "health_status": "healthy",
   "timestamp": "2024-05-11T10:30:15.123Z"
 }
 ```
@@ -280,6 +282,8 @@ Completa el pipeline para un candidato elegido por el usuario (flujo `needs_user
 ### 4.1 `POST /sensors/`
 
 Ingesta datos de un sensor (usado por hardware ESP32 o bridges).
+
+**Side-effects:** AL enviar esta petición, el backend recalculará en tiempo real el valor de `health_score` y el `health_status` haciendo match de los rangos recibidos contra el perfil óptimo de la tabla de Supabase `species_care_profiles`. El resultado se actualizará inmediatamente en la tabla `plants` (con un nuevo `last_health_check`) y se adjuntará al documento dentro de Firebase.
 
 **Request Body (JSON):**
 ```json

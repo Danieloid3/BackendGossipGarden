@@ -216,5 +216,7 @@ CREATE TABLE monthly_metrics (
   avg_temperature   FLOAT,
   avg_soil_humidity FLOAT,
   avg_air_humidity  FLOAT,
-  avg_light         FLOAT
+  avg_light         FLOAT,
+  avg_health_score  FLOAT,
+  health_status_majority VARCHAR
 );
