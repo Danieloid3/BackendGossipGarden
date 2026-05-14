@@ -1,0 +1,47 @@
+{
+  "result": {
+    "classification": {
+      "suggestions": [
+        {
+          "name": "Monstera deliciosa",
+          "probability": 0.55,
+          "similar_images": [],
+          "details": {
+            "common_names": ["Costilla de Adán", "Swiss cheese plant"],
+            "taxonomy": {"family": "Araceae", "genus": "Monstera"},
+            "gbif_id": 2868214,
+            "inaturalist_id": 73629,
+            "watering": {"min": 2, "max": 3},
+            "description": {"value": "Planta tropical de grandes hojas perforadas."}
+          }
+        },
+        {
+          "name": "Monstera adansonii",
+          "probability": 0.30,
+          "similar_images": [],
+          "details": {
+            "common_names": ["Monstera adansonii"],
+            "taxonomy": {"family": "Araceae", "genus": "Monstera"},
+            "gbif_id": 2868215,
+            "inaturalist_id": 73630,
+            "watering": {"min": 2, "max": 3},
+            "description": null
+          }
+        },
+        {
+          "name": "Epipremnum aureum",
+          "probability": 0.10,
+          "similar_images": [],
+          "details": {
+            "common_names": ["Pothos"],
+            "taxonomy": {"family": "Araceae", "genus": "Epipremnum"},
+            "gbif_id": 2868216,
+            "inaturalist_id": 73631,
+            "watering": {"min": 1, "max": 2},
+            "description": null
+          }
+        }
+      ]
+    }
+  }
+}

@@ -6,6 +6,10 @@ from typing import Optional
 class PlantCreate(BaseModel):
     species_id: UUID = Field(..., description="UUID de la especie en la tabla species")
     nickname: str = Field(..., description="Apodo de la planta")
+    photo_storage_path: str | None = Field(
+        default=None,
+        description="Path en Firebase Storage devuelto por /identify (photo_storage_path)"
+    )
 
 class PlantResponse(BaseModel):
     plant_id: UUID
@@ -14,5 +18,6 @@ class PlantResponse(BaseModel):
     nickname: str
     health_status: str
     health_score: float
+    photo_storage_path: Optional[str] = None
     created_at: datetime
     last_health_check: Optional[datetime] = None

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
 from app.schemas.plants import PlantCreate, PlantResponse
 from app.schemas.sensors import SensorDataResponse
@@ -20,9 +20,11 @@ async def create_plant(
             "user_id": user_id,
             "species_id": str(plant.species_id),
             "nickname": plant.nickname,
-            "health_status": "healthy",  # Valor por defecto inicial
-            "health_score": 100.0        # Valor por defecto inicial
+            "health_status": "healthy",
+            "health_score": 100.0,
         }
+        if plant.photo_storage_path:
+            plant_data["photo_storage_path"] = plant.photo_storage_path
 
         # Insertar en Supabase
         response = supabase.table('plants').insert(plant_data).execute()
@@ -156,3 +158,52 @@ async def get_sensor_data_history(
             status_code=500,
             detail=f"Error obteniendo el historial de los datos: {str(e)}"
         )
+
+
+_ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_MAX_PHOTO_BYTES = 8 * 1024 * 1024  # 8 MB
+
+
+@router.put("/{plant_id}/photo", response_model=PlantResponse)
+async def update_plant_photo(
+    plant_id: str,
+    image: UploadFile = File(..., description="Nueva foto de la planta (JPEG/PNG/WebP, máx 8 MB)"),
+    user_id: str = Depends(get_current_user),
+):
+    """Reemplaza la foto de una planta sin necesidad de re-identificarla.
+
+    Comprime la imagen (máx 1920px, JPEG q=85) y la sube a Firebase Storage.
+    Retorna la planta actualizada con el nuevo photo_storage_path.
+    """
+    if image.content_type not in _ALLOWED_PHOTO_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Formato no soportado: {image.content_type}. Usa JPEG, PNG o WebP.",
+        )
+
+    image_bytes = await image.read()
+    if len(image_bytes) > _MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Imagen demasiado grande (máx 8 MB)")
+
+    # Verificar que la planta pertenece al usuario
+    plant_row = supabase.table("plants").select("*").eq("plant_id", plant_id).eq("user_id", user_id).execute()
+    if not plant_row.data:
+        raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+
+    from app.services.image_storage_service import upload_plant_photo
+    try:
+        storage_path = await upload_plant_photo(image_bytes, user_id, plant_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    updated = (
+        supabase.table("plants")
+        .update({"photo_storage_path": storage_path})
+        .eq("plant_id", plant_id)
+        .execute()
+    )
+
+    if not updated.data:
+        raise HTTPException(status_code=500, detail="Error actualizando la foto de la planta.")
+
+    return updated.data[0]
