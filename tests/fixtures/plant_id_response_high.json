@@ -1,0 +1,29 @@
+{
+  "result": {
+    "classification": {
+      "suggestions": [
+        {
+          "name": "Sansevieria trifasciata",
+          "probability": 0.92,
+          "similar_images": [
+            {"url": "https://example.com/sansevieria.jpg"}
+          ],
+          "details": {
+            "common_names": ["Lengua de suegra", "Snake plant", "Mother-in-law's tongue"],
+            "taxonomy": {
+              "family": "Asparagaceae",
+              "genus": "Dracaena",
+              "order": "Asparagales",
+              "class": "Liliopsida",
+              "kingdom": "Plantae"
+            },
+            "gbif_id": 2764204,
+            "inaturalist_id": 53522,
+            "watering": {"min": 1, "max": 2},
+            "description": {"value": "Planta suculenta de interior muy resistente."}
+          }
+        }
+      ]
+    }
+  }
+}

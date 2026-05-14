@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import sensors, plants, auth
+from app.api.v1.endpoints import auth, identification, plants, sensors
 
 api_router = APIRouter()
 
@@ -11,3 +11,4 @@ async def health_check():
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(sensors.router, prefix="/sensors", tags=["Sensors / IoT"])
 api_router.include_router(plants.router, prefix="/plants", tags=["Plants"])
+api_router.include_router(identification.router, prefix="", tags=["Identification"])

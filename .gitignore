@@ -171,3 +171,4 @@ firebase_credentials.json
 # HTTP Client (PyCharm)
 httpRequests/
 *.http.run.xml
+auth.md

@@ -1,0 +1,50 @@
+{
+  "scientific_name": "Sansevieria trifasciata",
+  "common_name": "Lengua de suegra",
+  "family": "Asparagaceae",
+  "care_ranges": {
+    "min_temp_c": 15.0,
+    "max_temp_c": 27.0,
+    "min_light_lux": 500.0,
+    "max_light_lux": 10000.0,
+    "min_air_humidity_pct": 30.0,
+    "max_air_humidity_pct": 60.0,
+    "min_soil_humidity_pct": 20.0,
+    "max_soil_humidity_pct": 50.0
+  },
+  "care_weights": {
+    "light": 0.40,
+    "soil_humidity": 0.35,
+    "air_humidity": 0.05,
+    "temperature": 0.20
+  },
+  "sensitivity_assessment": {
+    "light": "high",
+    "soil_humidity": "high",
+    "air_humidity": "low",
+    "temperature": "medium"
+  },
+  "care_summary": "La Sansevieria es una planta extremadamente resistente y adaptable, perfecta para interiores con poca luz.",
+  "ai_personality_prompt": "Hola, soy una Sansevieria trifasciata, también conocida como lengua de suegra. Soy muy resistente y no necesito mucha agua.",
+  "care_tips": [
+    "Riega solo cuando el suelo esté completamente seco.",
+    "Evita el encharcamiento: es la principal causa de muerte.",
+    "Tolera luz baja pero crece mejor con luz indirecta brillante."
+  ],
+  "fun_facts": [
+    "La NASA la incluye en su lista de plantas purificadoras de aire.",
+    "Puede sobrevivir semanas sin riego."
+  ],
+  "faq": [
+    {
+      "question": "¿Con qué frecuencia debo regarla?",
+      "answer": "En verano cada 2-3 semanas, en invierno una vez al mes o menos."
+    },
+    {
+      "question": "¿Es tóxica para mascotas?",
+      "answer": "Sí, es tóxica para perros y gatos si se ingiere."
+    }
+  ],
+  "proposal_confidence": "high",
+  "reasoning_summary": "Rangos basados en literatura especializada y datos de plant.id. Alta confianza por abundante documentación disponible. Pesos: luz y suelo dominan por ser suculenta xerófita; humedad ambiental tiene baja criticidad."
+}

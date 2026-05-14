@@ -1,0 +1,15 @@
+{
+  "key": 2764204,
+  "scientificName": "Sansevieria trifasciata Prain",
+  "canonicalName": "Sansevieria trifasciata",
+  "family": "Asparagaceae",
+  "genus": "Dracaena",
+  "order": "Asparagales",
+  "class": "Liliopsida",
+  "phylum": "Tracheophyta",
+  "kingdom": "Plantae",
+  "vernacularNames": [
+    {"vernacularName": "Snake plant", "language": "en"},
+    {"vernacularName": "Lengua de suegra", "language": "es"}
+  ]
+}

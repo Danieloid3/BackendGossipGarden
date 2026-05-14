@@ -1,0 +1,21 @@
+{
+  "result": {
+    "classification": {
+      "suggestions": [
+        {
+          "name": "Unknown plant",
+          "probability": 0.12,
+          "similar_images": [],
+          "details": {
+            "common_names": [],
+            "taxonomy": {},
+            "gbif_id": null,
+            "inaturalist_id": null,
+            "watering": null,
+            "description": null
+          }
+        }
+      ]
+    }
+  }
+}
