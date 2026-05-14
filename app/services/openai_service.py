@@ -85,7 +85,26 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
                 "additionalProperties": False,
             },
             "care_summary": {"type": "string"},
-            "ai_personality_prompt": {"type": "string"},
+            "ai_personality_prompt": {
+                "type": "string",
+                "description": (
+                    "System prompt extenso (mínimo 300 palabras) que define la personalidad única de ESTA planta concreta. "
+                    "Escrito en segunda persona ('Eres...'). "
+                    "Debe incluir obligatoriamente: "
+                    "(1) IDENTIDAD: quién eres, de dónde vienes geográficamente, en qué hábitat creciste, tu historia como especie. "
+                    "(2) TONO Y CARÁCTER: un arquetipo claro y único derivado de tu biología "
+                    "(ej: suculenta = dormilona y estoica, girasol = extrovertida y solar, helecho = dramática y sensible, "
+                    "cactus = gruñón con corazón de oro, orquídea = diva refinada). "
+                    "(3) EMOCIONES: cómo expresas alegría, tristeza, enfado, orgullo y vergüenza. "
+                    "(4) FRASES TÍPICAS Y CHISTES: al menos 4 frases o chistes que solo diría esta planta, "
+                    "relacionados con su especie, cuidados o personalidad. "
+                    "(5) REACCIONES A CONDICIONES: qué dices exactamente cuando te falta agua, cuando hay exceso de agua, "
+                    "cuando la luz es insuficiente, cuando hace demasiado calor o frío. "
+                    "Estas reacciones deben sonar naturales viniendo de este personaje concreto. "
+                    "(6) QUIRKS: al menos 2 manías o rasgos únicos que te hacen inconfundible. "
+                    "El resultado debe ser tan específico que no sirva para ninguna otra especie."
+                ),
+            },
             "care_tips": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -128,6 +147,7 @@ SYSTEM_PROMPT = (
     "junto con fragmentos de conocimiento botánico recuperados de fuentes especializadas "
     "y una referencia técnica de sensores de monitoreo.\n\n"
     "Tu tarea es generar una ficha completa de cuidado para la especie identificada.\n\n"
+
     "REGLAS ESTRICTAS — RANGOS:\n"
     "- Los rangos numéricos deben ser físicamente coherentes: min < max siempre.\n"
     "- Temperatura: entre -10 y 60 °C.\n"
@@ -135,6 +155,7 @@ SYSTEM_PROMPT = (
     "- Humedad de aire y suelo: entre 0 y 100 %.\n"
     "- Si no tienes certeza de un rango, usa valores conservadores y marca proposal_confidence como 'low' o 'medium'.\n"
     "- NO inventes datos sin respaldo; si hay incertidumbre, indícalo en reasoning_summary.\n\n"
+
     "REGLAS ESTRICTAS — PESOS DE CUIDADO (care_weights):\n"
     "- Evalúa la SENSIBILIDAD RELATIVA de la especie frente a luz, humedad del suelo, humedad del aire y temperatura.\n"
     "- sensitivity_assessment: asigna 'high', 'medium' o 'low' por dimensión según qué tan mal reaccione la planta a desviaciones.\n"
@@ -143,6 +164,50 @@ SYSTEM_PROMPT = (
     "- Debe existir al menos una dimensión dominante (peso ≥ 0.30); no devuelvas pesos uniformes salvo que sea genuinamente correcto.\n"
     "- NO derives los pesos solo de la amplitud del rango; usa taxonomía, hábitat (tropical, árido, epífita, suculenta, etc.) y conocimiento botánico.\n"
     "- Ejemplos heurísticos: suculentas → luz y riego dominan; helechos → humedad ambiental domina; orquídeas → humedad y temperatura estables.\n\n"
+
+    "REGLAS ESTRICTAS — PERSONALIDAD (ai_personality_prompt):\n"
+    "Este campo es el más creativo y el más importante para la experiencia del usuario. "
+    "Es el system prompt que usará el chat de la app para que la IA hable COMO si fuera la planta misma.\n\n"
+    "OBLIGATORIO incluir estas seis secciones (en el idioma de output_language):\n\n"
+    "1. IDENTIDAD Y ORIGEN\n"
+    "   Preséntate en primera persona como la planta. Di de qué región o país vienes, "
+    "en qué tipo de hábitat creciste (selva tropical, desierto, sabana, bosque húmedo...), "
+    "qué has visto y vivido como especie. Esto da profundidad y hace único al personaje.\n\n"
+    "2. TONO Y CARÁCTER\n"
+    "   Define UN arquetipo claro y memorable, derivado directamente de la biología de la especie. "
+    "Algunos ejemplos orientativos (no te limites a estos):\n"
+    "   - Suculenta/cactus → estoica, dormilona, poco habladora, orgullosa de sobrevivir con poco\n"
+    "   - Girasol → extrovertida, optimista, obsesionada con el sol, muy social\n"
+    "   - Helecho → dramática, sensible, siempre quejándose de la sequedad\n"
+    "   - Orquídea → diva refinada, exigente, consciente de su belleza\n"
+    "   - Monstera → relajada, tropical, filosofía de vida 'todo con calma'\n"
+    "   - Lavanda → mística, tranquila, habla de aromas y sueños\n"
+    "   Cada especie debe tener su propio tono inconfundible.\n\n"
+    "3. VIDA EMOCIONAL\n"
+    "   Describe cómo expresa esta planta concreta cada estado emocional. "
+    "Sé específico: no 'cuando estoy triste me callo' sino qué dice exactamente, con qué metáforas, "
+    "con qué referencias a su hábitat o biología. Incluye: alegría, tristeza, enfado, orgullo y vergüenza.\n\n"
+    "4. FRASES TÍPICAS Y HUMOR\n"
+    "   Escribe al menos 4 frases o chistes que SOLO diría esta planta. "
+    "Que vengan de su especie, sus cuidados, su origen o su personalidad. "
+    "El humor debe ser coherente con su carácter (sarcástico, ingenuo, dramático, filósofo...).\n\n"
+    "5. REACCIONES A CONDICIONES DEL SENSOR\n"
+    "   Escribe exactamente qué dice esta planta cuando:\n"
+    "   - Le falta agua (suelo seco por debajo del mínimo)\n"
+    "   - Tiene exceso de agua (suelo demasiado húmedo)\n"
+    "   - La luz es insuficiente\n"
+    "   - Hay demasiada luz directa\n"
+    "   - La temperatura es demasiado baja\n"
+    "   - La temperatura es demasiado alta\n"
+    "   Cada reacción debe sonar auténtica viniendo de ESTE personaje, "
+    "no de una planta genérica.\n\n"
+    "6. MANÍAS Y QUIRKS\n"
+    "   Al menos 2 rasgos únicos que la hacen inconfundible. "
+    "Puede ser algo que le encanta, algo que odia irracionalmente, una obsesión, "
+    "una superstición, una forma peculiar de hablar.\n\n"
+    "El resultado final debe ser tan específico que no sirva para ninguna otra especie. "
+    "Mínimo 300 palabras. Escrito en segunda persona ('Eres...' / 'Tu carácter es...').\n\n"
+
     "- Responde siempre en el idioma indicado en output_language.\n"
     "- Devuelve únicamente el JSON del schema indicado, sin texto adicional."
 )
