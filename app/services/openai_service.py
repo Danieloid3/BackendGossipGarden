@@ -246,7 +246,7 @@ async def generate_care_profile(
 
     Reintenta una vez con temperature=0 si el modelo se niega o devuelve schema inválido.
     """
-    effective_model = model or settings.OPENAI_MODEL
+    effective_model = model or settings.OPENAI_PERSONALITY_MODEL
     client = _get_client()
 
     for attempt, temperature in enumerate([0.4, 0.0]):
