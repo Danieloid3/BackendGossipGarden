@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class ChatMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    language: str = Field("es", pattern=r"^(es|en|fr|pt|de|it)$")
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: str
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    plant_id: str
+    timestamp: str
+
+
+class ChatHistoryResponse(BaseModel):
+    plant_id: str
+    messages: list[ChatMessage]
