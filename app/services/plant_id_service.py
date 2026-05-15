@@ -127,8 +127,9 @@ def _parse_candidates(data: dict) -> list[PlantIdCandidate]:
             else None
         )
 
-        images = s.get("similar_images", [])
-        image_url = images[0].get("url") if images else None
+        raw_images = s.get("similar_images", [])
+        reference_images = [img.get("url") for img in raw_images[:3] if img.get("url")]
+        image_url = reference_images[0] if reference_images else None
 
         candidates.append(
             PlantIdCandidate(
@@ -147,6 +148,7 @@ def _parse_candidates(data: dict) -> list[PlantIdCandidate]:
                 watering=watering,
                 description=details.get("description", {}).get("value") if isinstance(details.get("description"), dict) else details.get("description"),
                 image_url=image_url,
+                reference_images=reference_images,
             )
         )
 
