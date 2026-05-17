@@ -1,0 +1,108 @@
+name: CI Backend
+
+on:
+  push:
+    branches: [main, qa]
+  pull_request:
+    branches: [main, qa]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Job 1: Tests unitarios + integrales (con DB mockeada) + cobertura
+  # Corre siempre, sin Postgres real.
+  # ──────────────────────────────────────────────────────────────────
+  unit:
+    name: Tests unitarios y de integración
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: http://localhost
+      SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+      SUPABASE_JWKS_URL: http://localhost/jwks
+      REDIS_URL: redis://localhost:6379/0
+      FIREBASE_CREDENTIALS_JSON: ""
+      MQTT_ENABLED: "false"
+      OPENAI_API_KEY: test-openai-key
+      PLANT_ID_API_KEY: test-plant-id-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+
+      - name: Ejecutar tests (excluye dbschema)
+        run: pytest -m "not dbschema" --cov=app --cov-report=term-missing -v
+
+  # ──────────────────────────────────────────────────────────────────
+  # Job 2: Validación de estructura de BD con Postgres efímero
+  # Base para tests de integración robustos futuros.
+  # Aplica schema.sql en limpio y migrations.sql sobre schema legacy.
+  # ──────────────────────────────────────────────────────────────────
+  db-schema:
+    name: Validación de esquema de BD (Postgres efímero)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SUPABASE_URL: http://localhost
+      SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+      SUPABASE_JWKS_URL: http://localhost/jwks
+      REDIS_URL: redis://localhost:6379/0
+      FIREBASE_CREDENTIALS_JSON: ""
+      MQTT_ENABLED: "false"
+      OPENAI_API_KEY: test-openai-key
+      PLANT_ID_API_KEY: test-plant-id-key
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/gg_schema
+      MIGRATIONS_DATABASE_URL: postgresql://ci:ci@localhost:5432/gg_migrations
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+
+      - name: Crear BDs de validación
+        run: |
+          PGPASSWORD=ci psql -h localhost -U ci -d postgres -c "CREATE DATABASE gg_schema;"
+          PGPASSWORD=ci psql -h localhost -U ci -d postgres -c "CREATE DATABASE gg_migrations;"
+
+      - name: Aplicar schema.sql (BD desde cero)
+        run: |
+          PGPASSWORD=ci psql -h localhost -U ci -d gg_schema -f migrations/schema.sql
+
+      - name: Aplicar legacy schema + migrations.sql (BD incremental)
+        run: |
+          PGPASSWORD=ci psql -h localhost -U ci -d gg_migrations -f tests/fixtures/legacy_schema.sql
+          PGPASSWORD=ci psql -h localhost -U ci -d gg_migrations -f migrations/migrations.sql
+
+      - name: Ejecutar tests de esquema vivo
+        run: pytest -m dbschema -v
