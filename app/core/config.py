@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_CHAT_MODEL: str = "gpt-4o"
+    OPENAI_PERSONALITY_MODEL: str = "gpt-5.5"
     OPENAI_TIMEOUT_SECONDS: float = 60.0
     OPENAI_MAX_RETRIES: int = 2
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
