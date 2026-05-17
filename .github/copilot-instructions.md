@@ -9,8 +9,25 @@ Nunca asumes el esquema de base de datos; te riges estrictamente por el esquema 
 1. **Supabase (PostgreSQL):** Base de datos relacional transaccional. API interactúa usando el SDK `supabase-py` y la `SUPABASE_SERVICE_ROLE_KEY`.
 2. **Firebase Firestore:** Base de datos NoSQL documental para telemetría IoT (`sensor_readings` con TTL), memoria de chats (`chat_logs`) y metadata de identificaciones (`plant_identifications`). API interactúa usando `firebase-admin`.
 3. **Firebase Storage:** Almacenamiento de imágenes de plantas. Las fotos se comprimen (Pillow, máx 1920px, JPEG q=85) antes de subir. El path se guarda en `plants.photo_storage_path`. Requiere `FIREBASE_STORAGE_BUCKET` en `.env` (formato: `project-id.appspot.com`, sin `gs://`). Servicio: `app/services/image_storage_service.py`.
-4. **Redis:** Almacén de clave-valor en memoria asíncrono para caché y contexto del LLM.
+4. **Redis:** Almacén de clave-valor en memoria asíncrono. Dos usos:
+   - Historial de chat: clave `chat:{user_id}:{plant_id}`, TTL 2 horas.
+   - Resúmenes compactados: clave `chat:summary:{user_id}:{plant_id}`, TTL 7 días.
 5. **Pipeline de Identificación** (`POST /api/v1/identify`): Orquesta plant.id (visión) → GBIF (taxonomía) → RAG sobre `botanical_chunks` con pgvector (`text-embedding-3-small`, 1536d) → OpenAI `gpt-4o` Structured Output (ficha de cuidado). Cacheo por `scientific_name`. La imagen se sube a Firebase Storage vía `BackgroundTask` y el path se devuelve en `CompletedResponse.photo_storage_path`. Ver `docs/species-schema-migration.md`.
+6. **LLM Chat** (`app/services/chat_service.py` + `app/api/v1/endpoints/chat.py`):
+   - Motor: **OpenAI** `AsyncOpenAI` con modelo `OPENAI_CHAT_MODEL` (default `gpt-4o`). NO usa Ollama.
+   - Endpoints: `POST /api/v1/chat/{plant_id}` (bloqueo) y `GET /api/v1/chat/{plant_id}/history`. Sin streaming.
+   - Memoria de dos niveles:
+     - **Redis**: caché de corto plazo (historial 2h, resúmenes 7d).
+     - **Firestore**: almacenamiento permanente en `plants/{plant_id}/chat_logs/{user_id}` (mensajes) y `plants/{plant_id}/chat_meta/{user_id}` (resúmenes).
+   - Compactación de contexto (`app/services/summarizer_service.py`): cuando el historial supera 3000 tokens, los mensajes antiguos se resumen con GPT. Los últimos 6 mensajes (3 turnos) nunca se compactan.
+   - Inyecta en el system prompt: personalidad de especie (`species_ai_content.ai_personality_prompt`), guardrails (la planta no puede hablar de política/programación/etc.), estado actual de sensores (desde Firestore), y resumen de conversaciones previas.
+   - Máximo 10 pares de turnos en historial activo.
+7. **Health Scoring** (`app/services/health_service.py`):
+   - Se invoca al ingerir datos de sensores.
+   - Consulta `species_care_profiles` para obtener rangos ideales y pesos (`weight_*`).
+   - Calcula score ponderado por parámetro (temp, luz, humedad aire, humedad suelo); default peso 0.25 cada uno.
+   - Umbrales: >=80 "healthy", >=50 "warning", <50 "critical".
+   - Actualiza `plants.health_score` y `plants.health_status` en Supabase.
 
 ## Esquema Estricto de PostgreSQL (Supabase)
 El SQL canónico vive en `migrations/schema.sql` (BD desde cero) y `migrations/migrations.sql` (incrementales sobre BD legacy). Toda interacción relacional debe respetar estas tablas y tipos de datos:
@@ -24,5 +41,37 @@ El SQL canónico vive en `migrations/schema.sql` (BD desde cero) y `migrations/m
 - `sensors`: `sensor_id` (UUID, PK), `plant_id` (UUID, FK, Nullable), `mac_address` (Varchar), `is_online` (Boolean), `last_ping` (Timestamp).
 - `events`: `event_id` (UUID, PK), `plant_id` (UUID, FK), `type` (Enum: 'alert', 'insight', 'chat', 'system'), `message` (Text), `created_at` (Timestamp).
 - `friendships`: `id` (UUID, PK), `user_low_id` (UUID, FK), `user_high_id` (UUID, FK), `requested_by_id` (UUID, FK), `status` (Enum: 'pending', 'accepted', 'blocked'), `created_at` (Timestamp).
-- `monthly_metrics`: `id` (UUID, PK), `plant_id` (UUID, FK), `month` (Int), `year` (Int), `avg_temperature` (Float), `avg_soil_humidity` (Float), `avg_air_humidity` (Float), `avg_light` (Float).
+- `monthly_metrics`: `id` (UUID, PK), `plant_id` (UUID, FK), `month` (Int), `year` (Int), `avg_temperature` (Float), `avg_soil_humidity` (Float), `avg_air_humidity` (Float), `avg_light` (Float), `avg_health_score` (Float), `health_status_majority` (Varchar).
 - `species_legacy`: backup post-migración (DROP tras 30 días de validación).
+
+## Configuración (`app/core/config.py`)
+
+Variables de entorno relevantes (todas en `.env`):
+
+| Variable | Default | Uso |
+|---|---|---|
+| `SUPABASE_URL` | — | URL del proyecto Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Service role key para bypass de RLS |
+| `SUPABASE_JWKS_URL` | — | JWKS endpoint para validar JWTs |
+| `REDIS_URL` | — | Conexión Redis (chat cache) |
+| `OPENAI_API_KEY` | — | Clave API para todos los servicios OpenAI |
+| `OPENAI_MODEL` | `gpt-4o` | Modelo para identificación (Structured Output) |
+| `OPENAI_CHAT_MODEL` | `gpt-4o` | Modelo para conversaciones de chat |
+| `OPENAI_PERSONALITY_MODEL` | `gpt-5.5` | Modelo para generación de personalidad de especie |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embeddings para RAG (1536d) |
+| `PLANT_ID_API_KEY` | — | Clave para plant.id API v3 |
+| `GBIF_BASE_URL` | `https://api.gbif.org/v1` | API de GBIF para taxonomía |
+| `RAG_ENABLED` | `true` | Activar/desactivar RAG en identificación |
+| `RAG_TOP_K` | `5` | Chunks a recuperar en RAG |
+| `RAG_MIN_SIMILARITY` | `0.55` | Umbral mínimo de similitud coseno |
+| `FIREBASE_STORAGE_BUCKET` | — | Bucket para fotos (formato: `project-id.appspot.com`) |
+| `MQTT_ENABLED` | `false` | Activar suscripción MQTT para sensores IoT |
+
+⚠️ NO existen `OLLAMA_URL` ni `MODEL_NAME`. El chat usa exclusivamente OpenAI.
+
+## CI (GitHub Actions — `.github/workflows/ci.yml`)
+
+- Package manager: `uv` (via `astral-sh/setup-uv@v6`), Python 3.12.
+- **Job 1** (`unit`): tests unitarios con externals mockeados — `pytest -m "not dbschema" --cov=app`.
+- **Job 2** (`db-schema`): Postgres efímero (`pgvector/pgvector:pg16`) — aplica `migrations/schema.sql` desde cero y `migrations/migrations.sql` sobre schema legacy; ejecuta `pytest -m dbschema`.
+- Triggers: push/PR a `main` o `qa`.
