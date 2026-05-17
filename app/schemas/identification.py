@@ -22,6 +22,7 @@ class PlantIdCandidate(BaseModel):
     watering: WateringScale | None = None
     description: str | None = None
     image_url: str | None = None
+    reference_images: list[str] = []
 
 
 class GbifTaxonomy(BaseModel):
