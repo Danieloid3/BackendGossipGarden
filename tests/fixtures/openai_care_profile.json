@@ -24,6 +24,12 @@
     "air_humidity": "low",
     "temperature": "medium"
   },
+  "eval_intervals": {
+    "temperature": 120,
+    "light": 60,
+    "air_humidity": 480,
+    "soil_humidity": 1440
+  },
   "care_summary": "La Sansevieria es una planta extremadamente resistente y adaptable, perfecta para interiores con poca luz.",
   "ai_personality_prompt": "Hola, soy una Sansevieria trifasciata, también conocida como lengua de suegra. Soy muy resistente y no necesito mucha agua.",
   "care_tips": [

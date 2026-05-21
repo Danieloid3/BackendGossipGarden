@@ -111,6 +111,7 @@ def test_species_columns(col):
     "care_data_source", "proposal_confidence", "needs_review",
     "weight_light", "weight_soil_humidity", "weight_air_humidity", "weight_temperature",
     "sensitivity_light", "sensitivity_soil_humidity", "sensitivity_air_humidity", "sensitivity_temperature",
+    "eval_interval_temp_min", "eval_interval_light_min", "eval_interval_air_hum_min", "eval_interval_soil_hum_min",
 ])
 def test_species_care_profiles_columns(col):
     assert col in _columns_in(SCHEMA_SQL, "species_care_profiles"), \
@@ -200,6 +201,14 @@ def test_migrations_sql_adds_monthly_metrics_health():
 def test_schema_and_migrations_agree_on_species_care_profiles_weights():
     """Ambos archivos deben referenciar las cuatro columnas de peso."""
     for col in ("weight_light", "weight_soil_humidity", "weight_air_humidity", "weight_temperature"):
+        assert col in SCHEMA_SQL, f"schema.sql no tiene {col}"
+        assert col in MIGRATIONS_SQL, f"migrations.sql no tiene {col}"
+
+
+def test_schema_and_migrations_agree_on_eval_intervals():
+    """Ambos archivos deben referenciar las cuatro columnas de intervalo de evaluación."""
+    for col in ("eval_interval_temp_min", "eval_interval_light_min",
+                "eval_interval_air_hum_min", "eval_interval_soil_hum_min"):
         assert col in SCHEMA_SQL, f"schema.sql no tiene {col}"
         assert col in MIGRATIONS_SQL, f"migrations.sql no tiene {col}"
 

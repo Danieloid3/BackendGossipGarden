@@ -127,6 +127,7 @@ def test_match_botanical_chunks_rpc_exists(schema_conn):
 @pytest.mark.parametrize("col", [
     "weight_light", "weight_soil_humidity", "weight_air_humidity", "weight_temperature",
     "sensitivity_light", "sensitivity_soil_humidity", "sensitivity_air_humidity", "sensitivity_temperature",
+    "eval_interval_temp_min", "eval_interval_light_min", "eval_interval_air_hum_min", "eval_interval_soil_hum_min",
 ])
 def test_care_profile_has_weights_and_sensitivity(schema_conn, col):
     cols = _get_columns(schema_conn, "species_care_profiles")

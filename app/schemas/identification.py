@@ -85,6 +85,13 @@ class SensitivityAssessment(BaseModel):
     temperature: Literal["high", "medium", "low"]
 
 
+class EvalIntervals(BaseModel):
+    temperature: int = Field(ge=30)
+    light: int = Field(ge=30)
+    air_humidity: int = Field(ge=30)
+    soil_humidity: int = Field(ge=30)
+
+
 class CareProfileLlmOutput(BaseModel):
     scientific_name: str
     common_name: str
@@ -92,6 +99,7 @@ class CareProfileLlmOutput(BaseModel):
     care_ranges: CareRanges
     care_weights: CareWeights
     sensitivity_assessment: SensitivityAssessment
+    eval_intervals: EvalIntervals
     care_summary: str
     ai_personality_prompt: str
     care_tips: list[str]
@@ -122,6 +130,7 @@ class CareProfileResponse(BaseModel):
     care_ranges: CareRanges
     care_weights: CareWeights | None = None
     sensitivity_assessment: SensitivityAssessment | None = None
+    eval_intervals: EvalIntervals | None = None
     care_summary: str | None
     ai_personality_prompt: str | None
     care_tips: list[str]

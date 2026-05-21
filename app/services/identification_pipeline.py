@@ -17,6 +17,7 @@ from app.schemas.identification import (
     CareProfileResponse,
     CareWeights,
     CompletedResponse,
+    EvalIntervals,
     FaqItem,
     IdentifyResponse,
     NeedsMorePhotosResponse,
@@ -158,6 +159,7 @@ async def enrich_and_persist(
         care_ranges=llm_output.care_ranges,
         care_weights=llm_output.care_weights,
         sensitivity_assessment=llm_output.sensitivity_assessment,
+        eval_intervals=llm_output.eval_intervals,
         care_summary=llm_output.care_summary,
         ai_personality_prompt=llm_output.ai_personality_prompt,
         care_tips=llm_output.care_tips,
@@ -308,6 +310,21 @@ def _build_response(full: "SpeciesFullResponse", *, cached_hit: bool, output_lan
         except Exception:
             sensitivity_assessment = None
 
+    eval_intervals = None
+    if cp and all(
+        v is not None for v in [cp.eval_interval_temp_min, cp.eval_interval_light_min,
+                                cp.eval_interval_air_hum_min, cp.eval_interval_soil_hum_min]
+    ):
+        try:
+            eval_intervals = EvalIntervals(
+                temperature=cp.eval_interval_temp_min,
+                light=cp.eval_interval_light_min,
+                air_humidity=cp.eval_interval_air_hum_min,
+                soil_humidity=cp.eval_interval_soil_hum_min,
+            )
+        except Exception:
+            eval_intervals = None
+
     faq_items: list[FaqItem] = []
     if ai and ai.faq:
         raw_faq = ai.faq if isinstance(ai.faq, list) else []
@@ -328,6 +345,7 @@ def _build_response(full: "SpeciesFullResponse", *, cached_hit: bool, output_lan
         care_ranges=care_ranges,
         care_weights=care_weights,
         sensitivity_assessment=sensitivity_assessment,
+        eval_intervals=eval_intervals,
         care_summary=ai.care_summary if ai else None,
         ai_personality_prompt=ai.ai_personality_prompt if ai else None,
         care_tips=ai.care_tips if ai and isinstance(ai.care_tips, list) else [],
