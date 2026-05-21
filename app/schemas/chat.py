@@ -27,3 +27,22 @@ class ChatResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     plant_id: str
     messages: list[ChatMessage]
+
+
+class VoiceOption(BaseModel):
+    voice_id: str
+    name: str
+    gender: str
+    style: str
+    lang: str
+    recommended: bool = False
+
+
+class VoicesResponse(BaseModel):
+    plant_id: str
+    current_voice_id: str
+    options: list[VoiceOption]
+
+
+class SetVoiceRequest(BaseModel):
+    voice_id: str = Field(..., min_length=1)

@@ -181,6 +181,8 @@ async def insert_ai_content(
         "faq": json.dumps([f.model_dump() for f in profile.faq], ensure_ascii=False),
         "language": language,
         "llm_model": model,
+        "elevenlabs_voice_id": profile.elevenlabs_voice_id,
+        "elevenlabs_voice_alternatives": json.dumps(profile.elevenlabs_voice_alternatives, ensure_ascii=False),
     }
     await asyncio.to_thread(
         lambda: supabase.table("species_ai_content")

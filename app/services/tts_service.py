@@ -10,7 +10,6 @@ import asyncio
 import io
 import logging
 import uuid
-from datetime import datetime, timezone
 
 import httpx
 from tenacity import (
@@ -23,6 +22,24 @@ from tenacity import (
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Voces curadas disponibles para las plantas. El LLM elige entre estas.
+AVAILABLE_VOICES: list[dict] = [
+    {"id": "N2lVS1w4EtoT3dr4eOWO", "name": "Callum",  "gender": "male",    "style": "husky trickster, misterioso",       "lang": "en"},
+    {"id": "SOYHLrjzK2X1ezoPC6cr", "name": "Harry",   "gender": "male",    "style": "fierce warrior, áspero y fuerte",   "lang": "en"},
+    {"id": "tomkxGQGz4b1kE0EM722", "name": "Mario",   "gender": "male",    "style": "animado, charlatán, energético",    "lang": "es"},
+    {"id": "6fN2iFIr0E9Ldj3fYqdo", "name": "Ricky",   "gender": "male",    "style": "exagerado, dramático, expresivo",   "lang": "es"},
+    {"id": "o2vbTbO3g4GrKUg7rehy", "name": "Cristian","gender": "male",    "style": "tranquilo, chill, colombiano",      "lang": "es"},
+    {"id": "VmejBeYhbrcTPwDniox7", "name": "Lina",    "gender": "female",  "style": "despreocupada, fresca, joven",      "lang": "es"},
+    {"id": "p5EUznrYaWnafKvUkNiR", "name": "Gaviota", "gender": "female",  "style": "natural, casual, latinoamericana",  "lang": "es"},
+    {"id": "JddqVF50ZSIR7SRbJE6u", "name": "Valeria", "gender": "female",  "style": "amigable, sociable, conversacional","lang": "es"},
+    {"id": "b2htR0pMe28pYwCY9gnP", "name": "Sofía",   "gender": "female",  "style": "cálida, confiable, colombiana",     "lang": "es"},
+    {"id": "ZLtrNuxn2sKIoUphMxLE", "name": "Natalia", "gender": "female",  "style": "caribeña, casual, chispeante",      "lang": "es"},
+    {"id": "cgSgspJ2msm6clMCkdW9", "name": "Jessica", "gender": "female",  "style": "juguetona, cálida, alegre",         "lang": "en"},
+    {"id": "FGY2WhTYpPnrIDTdsKH5", "name": "Laura",   "gender": "female",  "style": "entusiasta, extravagante, irónica", "lang": "en"},
+]
+
+VOICE_IDS: list[str] = [v["id"] for v in AVAILABLE_VOICES]
 
 
 class ElevenLabsError(Exception):

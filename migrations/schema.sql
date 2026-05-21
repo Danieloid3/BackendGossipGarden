@@ -83,10 +83,11 @@ CREATE TABLE species_ai_content (
   care_tips             JSONB,
   fun_facts             JSONB,
   faq                   JSONB,
-  language              TEXT        NOT NULL DEFAULT 'es',
-  llm_model             TEXT,
-  elevenlabs_voice_id   TEXT,
-  generated_at          TIMESTAMPTZ DEFAULT NOW(),
+  language                       TEXT        NOT NULL DEFAULT 'es',
+  llm_model                      TEXT,
+  elevenlabs_voice_id            TEXT,
+  elevenlabs_voice_alternatives  JSONB,
+  generated_at                   TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (species_id, language)
 );
 
@@ -170,9 +171,10 @@ CREATE TABLE plants (
   health_status      TEXT      NOT NULL DEFAULT 'healthy'
                                CHECK (health_status IN ('healthy', 'warning', 'critical')),
   health_score       FLOAT,
-  photo_storage_path TEXT,
-  last_health_check  TIMESTAMP,
-  created_at         TIMESTAMP DEFAULT NOW()
+  photo_storage_path   TEXT,
+  last_health_check    TIMESTAMP,
+  elevenlabs_voice_id  TEXT,
+  created_at           TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE sensors (

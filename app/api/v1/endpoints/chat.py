@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import get_current_user
 from app.db.redis import get_redis_client
 from app.db.supabase import supabase
-from app.schemas.chat import ChatHistoryResponse, ChatMessageRequest, ChatResponse
+from app.schemas.chat import (
+    ChatHistoryResponse,
+    ChatMessageRequest,
+    ChatResponse,
+    SetVoiceRequest,
+    VoicesResponse,
+)
 from app.services import chat_service
 
 router = APIRouter()
@@ -60,3 +66,36 @@ async def get_history(
 
     messages = await chat_service.get_chat_history(plant_id, user_id, limit)
     return ChatHistoryResponse(plant_id=plant_id, messages=messages)
+
+
+@router.get("/{plant_id}/voices", response_model=VoicesResponse)
+async def get_voices(
+    plant_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """Devuelve las 3 opciones de voz disponibles para la planta (recomendada + 2 alternativas)."""
+    try:
+        return await chat_service.get_voice_options(plant_id, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo voces: {str(e)}")
+
+
+@router.patch("/{plant_id}/voice", response_model=VoicesResponse)
+async def set_voice(
+    plant_id: str,
+    body: SetVoiceRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Guarda la voz elegida por el usuario para su planta."""
+    try:
+        return await chat_service.set_plant_voice(plant_id, user_id, body.voice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando voz: {str(e)}")

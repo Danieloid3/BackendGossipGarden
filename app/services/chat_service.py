@@ -14,8 +14,9 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.db.firebase import firebase_db
 from app.db.supabase import supabase
-from app.schemas.chat import ChatMessage, ChatHistoryResponse, ChatResponse
+from app.schemas.chat import ChatMessage, ChatHistoryResponse, ChatResponse, VoiceOption, VoicesResponse
 from app.services import tts_service
+from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
 from app.services.summarizer_service import (
     build_system_with_summary,
     compact_if_needed,
@@ -43,7 +44,7 @@ def _summary_redis_key(user_id: str, plant_id: str) -> str:
 def _verify_and_get_plant(plant_id: str, user_id: str) -> dict:
     result = (
         supabase.table("plants")
-        .select("plant_id, user_id, species_id, nickname, health_score, health_status")
+        .select("plant_id, user_id, species_id, nickname, health_score, health_status, elevenlabs_voice_id")
         .eq("plant_id", plant_id)
         .execute()
     )
@@ -346,10 +347,12 @@ async def chat_with_plant(
     ])[-(_HISTORY_MAX_TURNS * 2):]
 
     # 8. Generar audio si el cliente lo solicitó
+    # La voz del usuario (plants) tiene prioridad sobre la recomendada de la especie
+    effective_voice_id = plant_row.get("elevenlabs_voice_id") or voice_id
     audio_url: str | None = None
     if response_format == "audio":
         try:
-            audio_bytes = await tts_service.synthesize(reply, voice_id)
+            audio_bytes = await tts_service.synthesize(reply, effective_voice_id)
             audio_url = await tts_service.upload_audio(audio_bytes, user_id, plant_id, now_str)
         except tts_service.ElevenLabsError as e:
             logger.error("TTS falló, se devuelve solo texto: %s", e)
@@ -382,3 +385,88 @@ async def get_chat_history(
 ) -> list[ChatMessage]:
     raw = await asyncio.to_thread(_fetch_history_sync, plant_id, user_id, limit)
     return [ChatMessage(**m) for m in raw]
+
+
+def _load_voice_data_sync(plant_id: str, user_id: str) -> dict:
+    """Carga la planta y los datos de voz de la especie en una sola operación."""
+    plant_row = _verify_and_get_plant(plant_id, user_id)
+    species_id = plant_row["species_id"]
+
+    voice_result = (
+        supabase.table("species_ai_content")
+        .select("elevenlabs_voice_id, elevenlabs_voice_alternatives")
+        .eq("species_id", species_id)
+        .limit(1)
+        .execute()
+    )
+    recommended_voice_id: str | None = None
+    alternatives: list[str] = []
+    if voice_result.data:
+        row = voice_result.data[0]
+        recommended_voice_id = row.get("elevenlabs_voice_id")
+        raw_alts = row.get("elevenlabs_voice_alternatives")
+        if isinstance(raw_alts, list):
+            alternatives = raw_alts
+        elif isinstance(raw_alts, str):
+            import json as _json
+            alternatives = _json.loads(raw_alts)
+
+    return {
+        "plant_voice_id": plant_row.get("elevenlabs_voice_id"),
+        "recommended_voice_id": recommended_voice_id,
+        "alternatives": alternatives,
+    }
+
+
+def _build_voices_response(plant_id: str, voice_data: dict) -> VoicesResponse:
+    """Construye la respuesta con las 3 opciones de voz."""
+    recommended_id = voice_data["recommended_voice_id"] or settings.ELEVENLABS_DEFAULT_VOICE_ID
+    alternatives = voice_data["alternatives"]
+    current_voice_id = voice_data["plant_voice_id"] or recommended_id
+
+    # Construir el conjunto de 3 voice_ids: recomendada + hasta 2 alternativas
+    option_ids: list[str] = [recommended_id]
+    for alt in alternatives:
+        if alt != recommended_id and len(option_ids) < 3:
+            option_ids.append(alt)
+
+    # Si faltan opciones, rellenar con voces del catálogo
+    for v in AVAILABLE_VOICES:
+        if len(option_ids) >= 3:
+            break
+        if v["id"] not in option_ids:
+            option_ids.append(v["id"])
+
+    voice_map = {v["id"]: v for v in AVAILABLE_VOICES}
+    options: list[VoiceOption] = []
+    for vid in option_ids:
+        meta = voice_map.get(vid, {"name": vid, "gender": "unknown", "style": "", "lang": "es"})
+        options.append(VoiceOption(
+            voice_id=vid,
+            name=meta["name"],
+            gender=meta["gender"],
+            style=meta["style"],
+            lang=meta["lang"],
+            recommended=(vid == recommended_id),
+        ))
+
+    return VoicesResponse(plant_id=plant_id, current_voice_id=current_voice_id, options=options)
+
+
+async def get_voice_options(plant_id: str, user_id: str) -> VoicesResponse:
+    voice_data = await asyncio.to_thread(_load_voice_data_sync, plant_id, user_id)
+    return _build_voices_response(plant_id, voice_data)
+
+
+async def set_plant_voice(plant_id: str, user_id: str, voice_id: str) -> VoicesResponse:
+    if voice_id not in VOICE_IDS:
+        raise ValueError(f"voice_id '{voice_id}' no es válido")
+
+    def _save_and_load() -> dict:
+        supabase.table("plants").update({"elevenlabs_voice_id": voice_id}).eq("plant_id", plant_id).execute()
+        return _load_voice_data_sync(plant_id, user_id)
+
+    voice_data = await asyncio.to_thread(_save_and_load)
+    # Reflejar la elección del usuario como voz activa
+    voice_data["plant_voice_id"] = voice_id
+    return _build_voices_response(plant_id, voice_data)
