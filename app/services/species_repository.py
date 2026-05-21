@@ -160,6 +160,10 @@ async def insert_care_profile(
         "sensitivity_soil_humidity": profile.sensitivity_assessment.soil_humidity,
         "sensitivity_air_humidity": profile.sensitivity_assessment.air_humidity,
         "sensitivity_temperature": profile.sensitivity_assessment.temperature,
+        "eval_interval_temp_min": profile.eval_intervals.temperature,
+        "eval_interval_light_min": profile.eval_intervals.light,
+        "eval_interval_air_hum_min": profile.eval_intervals.air_humidity,
+        "eval_interval_soil_hum_min": profile.eval_intervals.soil_humidity,
     }
     await asyncio.to_thread(lambda: supabase.table("species_care_profiles").insert(data).execute())
 
