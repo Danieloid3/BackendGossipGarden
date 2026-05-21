@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     language: str = Field("es", pattern=r"^(es|en|fr|pt|de|it)$")
+    response_format: Literal["text", "audio"] = "text"
 
 
 class ChatMessage(BaseModel):
@@ -20,6 +21,7 @@ class ChatResponse(BaseModel):
     reply: str
     plant_id: str
     timestamp: str
+    audio_url: str | None = None
 
 
 class ChatHistoryResponse(BaseModel):

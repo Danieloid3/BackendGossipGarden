@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.firebase import firebase_db
 from app.db.supabase import supabase
 from app.schemas.chat import ChatMessage, ChatHistoryResponse, ChatResponse
+from app.services import tts_service
 from app.services.summarizer_service import (
     build_system_with_summary,
     compact_if_needed,
@@ -98,30 +99,33 @@ def _format_plant_status(plant: dict, sensor: dict | None) -> str:
     return "\n".join(lines)
 
 
-def _get_personality(species_id: str, language: str) -> str:
+def _get_personality(species_id: str, language: str) -> tuple[str, str | None]:
+    """Retorna (personality_prompt, elevenlabs_voice_id)."""
     result = (
         supabase.table("species_ai_content")
-        .select("ai_personality_prompt")
+        .select("ai_personality_prompt, elevenlabs_voice_id")
         .eq("species_id", species_id)
         .eq("language", language)
         .limit(1)
         .execute()
     )
     if result.data:
-        return result.data[0]["ai_personality_prompt"]
+        row = result.data[0]
+        return row["ai_personality_prompt"], row.get("elevenlabs_voice_id")
 
     fallback = (
         supabase.table("species_ai_content")
-        .select("ai_personality_prompt")
+        .select("ai_personality_prompt, elevenlabs_voice_id")
         .eq("species_id", species_id)
         .eq("language", "es")
         .limit(1)
         .execute()
     )
     if fallback.data:
-        return fallback.data[0]["ai_personality_prompt"]
+        row = fallback.data[0]
+        return row["ai_personality_prompt"], row.get("elevenlabs_voice_id")
 
-    return "Eres una planta amigable y cariñosa. Habla en primera persona como si fueras la planta."
+    return "Eres una planta amigable y cariñosa. Habla en primera persona como si fueras la planta.", None
 
 
 def _load_history_sync(plant_id: str, user_id: str) -> list[dict]:
@@ -202,6 +206,7 @@ def _save_exchange_sync(
     user_message: str,
     reply: str,
     now_ms: int,
+    audio_url: str | None = None,
 ) -> None:
     doc_ref = (
         firebase_db.collection("plants")
@@ -210,6 +215,9 @@ def _save_exchange_sync(
         .document(user_id)
     )
     now_str = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    assistant_msg: dict = {"role": "assistant", "content": reply, "timestamp": now_str}
+    if audio_url:
+        assistant_msg["audio_url"] = audio_url
     doc_ref.set(
         {
             "user_id": user_id,
@@ -217,7 +225,7 @@ def _save_exchange_sync(
             "updated_at": now_str,
             "messages": ArrayUnion([
                 {"role": "user", "content": user_message, "timestamp": now_str},
-                {"role": "assistant", "content": reply, "timestamp": now_str},
+                assistant_msg,
             ]),
         },
         merge=True,
@@ -279,6 +287,7 @@ async def chat_with_plant(
     message: str,
     language: str,
     redis_client,
+    response_format: str = "text",
 ) -> ChatResponse:
     # 1. Verificar ownership + cargar caché en paralelo
     plant_task = asyncio.to_thread(_verify_and_get_plant, plant_id, user_id)
@@ -293,11 +302,11 @@ async def chat_with_plant(
 
     if not history:
         history_task = asyncio.to_thread(_load_history_sync, plant_id, user_id)
-        personality, sensor, history = await asyncio.gather(
+        (personality, voice_id), sensor, history = await asyncio.gather(
             personality_task, sensor_task, history_task
         )
     else:
-        personality, sensor = await asyncio.gather(personality_task, sensor_task)
+        (personality, voice_id), sensor = await asyncio.gather(personality_task, sensor_task)
 
     # 3. Si no había resumen en Redis, intentar cargarlo desde Firestore
     if not summary:
@@ -336,9 +345,18 @@ async def chat_with_plant(
         {"role": "assistant", "content": reply},
     ])[-(_HISTORY_MAX_TURNS * 2):]
 
+    # 8. Generar audio si el cliente lo solicitó
+    audio_url: str | None = None
+    if response_format == "audio":
+        try:
+            audio_bytes = await tts_service.synthesize(reply, voice_id)
+            audio_url = await tts_service.upload_audio(audio_bytes, user_id, plant_id, now_str)
+        except tts_service.ElevenLabsError as e:
+            logger.error("TTS falló, se devuelve solo texto: %s", e)
+
     try:
         await asyncio.to_thread(
-            _save_exchange_sync, plant_id, user_id, message, reply, now_ms
+            _save_exchange_sync, plant_id, user_id, message, reply, now_ms, audio_url
         )
     except Exception as e:
         logger.error("Error guardando en Firestore: %s", e)
@@ -354,7 +372,7 @@ async def chat_with_plant(
 
     await _save_cache(redis_client, user_id, plant_id, updated_history, summary, was_compacted)
 
-    return ChatResponse(reply=reply, plant_id=plant_id, timestamp=now_str)
+    return ChatResponse(reply=reply, plant_id=plant_id, timestamp=now_str, audio_url=audio_url)
 
 
 async def get_chat_history(

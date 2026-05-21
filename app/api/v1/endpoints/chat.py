@@ -33,6 +33,7 @@ async def send_message(
             user_id=user_id,
             message=body.message,
             language=body.language,
+            response_format=body.response_format,
             redis_client=redis,
         )
     except ValueError as e:

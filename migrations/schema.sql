@@ -85,6 +85,7 @@ CREATE TABLE species_ai_content (
   faq                   JSONB,
   language              TEXT        NOT NULL DEFAULT 'es',
   llm_model             TEXT,
+  elevenlabs_voice_id   TEXT,
   generated_at          TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (species_id, language)
 );

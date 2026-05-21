@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     OPENAI_MAX_RETRIES: int = 2
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_BASE_URL: str = "https://api.elevenlabs.io/v1"
+    ELEVENLABS_DEFAULT_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"
+    ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
+    ELEVENLABS_TIMEOUT_SECONDS: float = 30.0
+
     RAG_ENABLED: bool = True
     RAG_TOP_K: int = 5
     RAG_MIN_SIMILARITY: float = 0.55
