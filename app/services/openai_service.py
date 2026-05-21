@@ -20,8 +20,36 @@ from app.schemas.identification import (
     FaqItem,
     SensitivityAssessment,
 )
+from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
 
 logger = logging.getLogger(__name__)
+
+def _build_voice_schema() -> dict:
+    """Construye el fragmento de schema para la selección de voz."""
+    voice_enum = VOICE_IDS
+    voices_desc = "; ".join(
+        f"{v['id']} = {v['name']} ({v['gender']}, {v['style']}, lang:{v['lang']})"
+        for v in AVAILABLE_VOICES
+    )
+    return {
+        "elevenlabs_voice_id": {
+            "type": "string",
+            "enum": voice_enum,
+            "description": (
+                "Elige la voz de ElevenLabs que mejor encaje con la personalidad de esta planta. "
+                "Considera el género, el tono y el idioma predominante del chat. "
+                f"Voces disponibles: {voices_desc}"
+            ),
+        },
+        "elevenlabs_voice_alternatives": {
+            "type": "array",
+            "description": "Exactamente 2 voice_ids alternativos distintos al recomendado, que también encajen con la planta.",
+            "items": {"type": "string", "enum": voice_enum},
+            "minItems": 2,
+            "maxItems": 2,
+        },
+    }
+
 
 CARE_PROFILE_JSON_SCHEMA: dict = {
     "name": "plant_care_profile",
@@ -33,6 +61,7 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
             "care_weights", "sensitivity_assessment", "eval_intervals",
             "care_summary", "ai_personality_prompt", "care_tips",
             "fun_facts", "faq", "proposal_confidence", "reasoning_summary",
+            "elevenlabs_voice_id", "elevenlabs_voice_alternatives",
         ],
         "properties": {
             "scientific_name": {"type": "string"},
@@ -165,6 +194,7 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
                 "enum": ["high", "medium", "low"],
             },
             "reasoning_summary": {"type": "string"},
+            **_build_voice_schema(),
         },
         "additionalProperties": False,
     },
@@ -237,6 +267,12 @@ SYSTEM_PROMPT = (
     "El resultado final debe ser tan específico que no sirva para ninguna otra especie. "
     "Mínimo 300 palabras. Escrito en segunda persona ('Eres...' / 'Tu carácter es...').\n\n"
 
+    "REGLAS ESTRICTAS — VOZ (elevenlabs_voice_id / elevenlabs_voice_alternatives):\n"
+    "- Elige la voz que mejor encaje con el arquetipo de personalidad que acabas de definir.\n"
+    "- Considera: género del personaje, energía (dramático, chill, alegre, áspero), idioma del chat.\n"
+    "- elevenlabs_voice_id: la voz principal recomendada.\n"
+    "- elevenlabs_voice_alternatives: exactamente 2 voice_ids distintos al principal que también serían coherentes.\n"
+    "- No repitas el mismo voice_id en principales y alternativas.\n\n"
     "REGLAS ESTRICTAS — INTERVALOS DE EVALUACIÓN (eval_intervals):\n"
     "- Para cada parámetro, define cada cuántos minutos se debe evaluar según la biología de la especie.\n"
     "- Mínimo 30 minutos para cualquier parámetro.\n"
@@ -352,6 +388,8 @@ def _build_output(parsed: dict) -> CareProfileLlmOutput:
         faq=[FaqItem(**item) for item in parsed["faq"]],
         proposal_confidence=parsed["proposal_confidence"],
         reasoning_summary=parsed["reasoning_summary"],
+        elevenlabs_voice_id=parsed.get("elevenlabs_voice_id"),
+        elevenlabs_voice_alternatives=parsed.get("elevenlabs_voice_alternatives", []),
     )
 
 
