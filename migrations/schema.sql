@@ -69,7 +69,12 @@ CREATE TABLE species_care_profiles (
   sensitivity_light         TEXT    CHECK (sensitivity_light IS NULL OR sensitivity_light IN ('high', 'medium', 'low')),
   sensitivity_soil_humidity TEXT    CHECK (sensitivity_soil_humidity IS NULL OR sensitivity_soil_humidity IN ('high', 'medium', 'low')),
   sensitivity_air_humidity  TEXT    CHECK (sensitivity_air_humidity IS NULL OR sensitivity_air_humidity IN ('high', 'medium', 'low')),
-  sensitivity_temperature   TEXT    CHECK (sensitivity_temperature IS NULL OR sensitivity_temperature IN ('high', 'medium', 'low'))
+  sensitivity_temperature   TEXT    CHECK (sensitivity_temperature IS NULL OR sensitivity_temperature IN ('high', 'medium', 'low')),
+  -- Intervalo de evaluación en minutos por parámetro
+  eval_interval_temp_min      INTEGER NOT NULL CHECK (eval_interval_temp_min >= 30),
+  eval_interval_light_min     INTEGER NOT NULL CHECK (eval_interval_light_min >= 30),
+  eval_interval_air_hum_min   INTEGER NOT NULL CHECK (eval_interval_air_hum_min >= 30),
+  eval_interval_soil_hum_min  INTEGER NOT NULL CHECK (eval_interval_soil_hum_min >= 30)
 );
 
 CREATE INDEX idx_care_profiles_species_id ON species_care_profiles(species_id);

@@ -232,3 +232,15 @@ ADD COLUMN IF NOT EXISTS avg_health_score FLOAT,
 ADD COLUMN IF NOT EXISTS health_status_majority VARCHAR;
 
 COMMIT;
+
+-- ============================================================
+-- 005 — Eval intervals por parámetro en species_care_profiles
+-- ============================================================
+
+ALTER TABLE species_care_profiles
+  ADD COLUMN IF NOT EXISTS eval_interval_temp_min      INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_temp_min >= 30),
+  ADD COLUMN IF NOT EXISTS eval_interval_light_min     INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_light_min >= 30),
+  ADD COLUMN IF NOT EXISTS eval_interval_air_hum_min   INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_air_hum_min >= 30),
+  ADD COLUMN IF NOT EXISTS eval_interval_soil_hum_min  INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_soil_hum_min >= 30);
+
+COMMIT;

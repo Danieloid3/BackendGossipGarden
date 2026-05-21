@@ -232,6 +232,12 @@ Identifica la planta en una foto. La imagen se comprime y sube a Firebase Storag
       "air_humidity": "low",
       "temperature": "medium"
     },
+    "eval_intervals": {
+      "temperature": 120,
+      "light": 60,
+      "air_humidity": 480,
+      "soil_humidity": 1440
+    },
     "care_summary": "La lengua de suegra es una planta resistente...",
     "ai_personality_prompt": "Soy una Dracaena trifasciata...",
     "care_tips": ["Riega solo cuando el suelo esté seco.", "..."],
@@ -249,6 +255,8 @@ Identifica la planta en una foto. La imagen se comprime y sube a Firebase Storag
 ```
 
 > **Nota `care_weights` y `sensitivity_assessment`:** disponibles en fichas generadas tras la migración `003_care_weights.sql`. Para fichas legacy (pre-migración) o cacheadas sin pesos, estos campos son `null`. La suma de los cuatro pesos es siempre ≈ 1.0.
+>
+> **Nota `eval_intervals`:** disponibles en fichas generadas tras la migración `005`. Indican cada cuántos minutos evaluar cada parámetro según la biología de la especie. Mínimo 30 min. Para fichas legacy sin este dato, el campo es `null`.
 >
 > **Nota `cached`:** si la especie ya existía en BD, devuelve `true` y no se vuelve a llamar al LLM.
 >
@@ -323,19 +331,20 @@ Ingesta datos de un sensor (usado por hardware ESP32 o bridges).
 
 ---
 
-## 📊 Referencia: campos de `care_weights` y `sensitivity_assessment`
+## 📊 Referencia: campos de `care_weights`, `sensitivity_assessment` y `eval_intervals`
 
-Introducidos en la migración `003_care_weights.sql`. Expresan la **criticidad relativa** de cada dimensión de monitoreo para la especie.
+Introducidos en las migraciones `003_care_weights.sql` (pesos/sensibilidad) y `005` (intervalos).
 
-| Dimensión | Campo en `care_weights` | Campo en `sensitivity_assessment` |
-|---|---|---|
-| Luz | `light` (float 0–1) | `light` (`"high"` \| `"medium"` \| `"low"`) |
-| Humedad suelo | `soil_humidity` (float 0–1) | `soil_humidity` |
-| Humedad aire | `air_humidity` (float 0–1) | `air_humidity` |
-| Temperatura | `temperature` (float 0–1) | `temperature` |
+| Dimensión | Campo en `care_weights` | Campo en `sensitivity_assessment` | Campo en `eval_intervals` |
+|---|---|---|---|
+| Luz | `light` (float 0–1) | `light` (`"high"` \| `"medium"` \| `"low"`) | `light` (int, minutos) |
+| Humedad suelo | `soil_humidity` (float 0–1) | `soil_humidity` | `soil_humidity` (int, minutos) |
+| Humedad aire | `air_humidity` (float 0–1) | `air_humidity` | `air_humidity` (int, minutos) |
+| Temperatura | `temperature` (float 0–1) | `temperature` | `temperature` (int, minutos) |
 
 Reglas:
 - La suma de los 4 valores de `care_weights` es siempre ≈ 1.0.
 - Un `care_weights.light = 0.40` significa que la luz es la variable más crítica para esa especie.
 - `sensitivity_assessment` es el nivel cualitativo del que se derivan los pesos.
-- Ambos campos son `null` para fichas generadas antes de la migración.
+- `eval_intervals` expresa cada cuántos minutos evaluar el parámetro (mínimo 30). Coherente con `sensitivity_assessment`: high → intervalos cortos, low → intervalos largos.
+- Los tres campos son `null` para fichas generadas antes de su respectiva migración.

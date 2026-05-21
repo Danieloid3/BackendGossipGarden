@@ -45,6 +45,10 @@ class SpeciesCareProfileRecord(BaseModel):
     sensitivity_soil_humidity: str | None = None
     sensitivity_air_humidity: str | None = None
     sensitivity_temperature: str | None = None
+    eval_interval_temp_min: int | None = None
+    eval_interval_light_min: int | None = None
+    eval_interval_air_hum_min: int | None = None
+    eval_interval_soil_hum_min: int | None = None
 
 
 class SpeciesAiContentRecord(BaseModel):

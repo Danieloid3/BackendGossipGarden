@@ -16,6 +16,7 @@ from app.schemas.identification import (
     CareProfileLlmOutput,
     CareRanges,
     CareWeights,
+    EvalIntervals,
     FaqItem,
     SensitivityAssessment,
 )
@@ -57,7 +58,7 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
         "type": "object",
         "required": [
             "scientific_name", "common_name", "family", "care_ranges",
-            "care_weights", "sensitivity_assessment",
+            "care_weights", "sensitivity_assessment", "eval_intervals",
             "care_summary", "ai_personality_prompt", "care_tips",
             "fun_facts", "faq", "proposal_confidence", "reasoning_summary",
             "elevenlabs_voice_id", "elevenlabs_voice_alternatives",
@@ -110,6 +111,34 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
                     "soil_humidity": {"type": "string", "enum": ["high", "medium", "low"]},
                     "air_humidity":  {"type": "string", "enum": ["high", "medium", "low"]},
                     "temperature":   {"type": "string", "enum": ["high", "medium", "low"]},
+                },
+                "additionalProperties": False,
+            },
+            "eval_intervals": {
+                "type": "object",
+                "description": "How often in minutes to evaluate each sensor parameter. Minimum 30 for all. Base values strictly on the species' known biological requirements.",
+                "required": ["temperature", "light", "air_humidity", "soil_humidity"],
+                "properties": {
+                    "temperature": {
+                        "type": "integer",
+                        "minimum": 30,
+                        "description": "Minutes between temperature evaluations. Tropical plants: 30-60. Desert/arid: 240-1440.",
+                    },
+                    "light": {
+                        "type": "integer",
+                        "minimum": 30,
+                        "description": "Minutes between light evaluations. High-sensitivity: 30-60. Low-sensitivity/shade-tolerant: 120-480.",
+                    },
+                    "air_humidity": {
+                        "type": "integer",
+                        "minimum": 30,
+                        "description": "Minutes between air humidity evaluations. Tropical/moisture-loving: 30-60. Arid: 480-1440.",
+                    },
+                    "soil_humidity": {
+                        "type": "integer",
+                        "minimum": 30,
+                        "description": "Minutes between soil humidity evaluations. Fern/tropical: 30-60. Succulents: 1440. Cactus: 4320 (3 days).",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -244,6 +273,15 @@ SYSTEM_PROMPT = (
     "- elevenlabs_voice_id: la voz principal recomendada.\n"
     "- elevenlabs_voice_alternatives: exactamente 2 voice_ids distintos al principal que también serían coherentes.\n"
     "- No repitas el mismo voice_id en principales y alternativas.\n\n"
+    "REGLAS ESTRICTAS — INTERVALOS DE EVALUACIÓN (eval_intervals):\n"
+    "- Para cada parámetro, define cada cuántos minutos se debe evaluar según la biología de la especie.\n"
+    "- Mínimo 30 minutos para cualquier parámetro.\n"
+    "- Guía orientativa:\n"
+    "  · Temperatura: plantas tropicales/sensibles 30-60 min; desérticas/áridas 240-1440 min.\n"
+    "  · Luz: especies de alta sensibilidad 30-60 min; tolerantes a sombra 120-480 min.\n"
+    "  · Humedad del aire: tropicales 30-60 min; suculentas/cactus 480-1440 min.\n"
+    "  · Humedad del suelo: helechos/calatheas 30-60 min; suculentas 1440 min; cactus 4320 min (3 días).\n"
+    "- Los intervalos deben ser coherentes con sensitivity_assessment: high → intervalos cortos, low → intervalos largos.\n\n"
 
     "- Responde siempre en el idioma indicado en output_language.\n"
     "- Devuelve únicamente el JSON del schema indicado, sin texto adicional."
@@ -342,6 +380,7 @@ def _build_output(parsed: dict) -> CareProfileLlmOutput:
         care_ranges=CareRanges(**ranges),
         care_weights=CareWeights(**parsed["care_weights"]),
         sensitivity_assessment=SensitivityAssessment(**parsed["sensitivity_assessment"]),
+        eval_intervals=EvalIntervals(**parsed["eval_intervals"]),
         care_summary=parsed["care_summary"],
         ai_personality_prompt=parsed["ai_personality_prompt"],
         care_tips=parsed["care_tips"],
