@@ -11,7 +11,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 🔐 1. Auth (Autenticación)
+## 1. Auth (Autenticación)
 
 ### 1.1 `POST /auth/register`
 
@@ -63,7 +63,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 🌿 2. Plants (Plantas)
+## 2. Plants (Plantas)
 
 ### 2.1 `POST /plants/`
 
@@ -156,7 +156,7 @@ Sube o reemplaza la foto de una planta ya registrada (sin necesidad de re-identi
 
 ---
 
-## 🔬 3. Identificación de Plantas
+## 3. Identificación de Plantas
 
 El flujo completo es: `POST /identify` → si `status=needs_user_selection`, el usuario elige → `POST /species/from-candidate` → se crea la planta con el `species_id` devuelto.
 
@@ -285,11 +285,16 @@ Completa el pipeline para un candidato elegido por el usuario (flujo `needs_user
 
 ---
 
-## 📡 4. Sensors / IoT (Sensores)
+## 4. Sensors / IoT (Sensores)
 
 ### 4.1 `POST /sensors/`
 
 Ingesta datos de un sensor (usado por hardware ESP32 o bridges).
+
+**IMPORTANTE:** Este endpoint **NO requiere autenticación JWT**. Está diseñado para que hardware IoT (ESP32) pueda enviar datos sin token. En producción, se recomienda proteger este endpoint con:
+- API key en header específico
+- Validación de `mac_address` contra lista blanca
+- IP whitelist del broker MQTT
 
 **Side-effects:** AL enviar esta petición, el backend recalculará en tiempo real el valor de `health_score` y el `health_status` haciendo match de los rangos recibidos contra el perfil óptimo de la tabla de Supabase `species_care_profiles`. El resultado se actualizará inmediatamente en la tabla `plants` (con un nuevo `last_health_check`) y se adjuntará al documento dentro de Firebase.
 
@@ -317,7 +322,7 @@ Ingesta datos de un sensor (usado por hardware ESP32 o bridges).
 
 ---
 
-## ❤️ 5. Core
+## 5. Core
 
 ### 5.1 `GET /health`
 
@@ -331,7 +336,110 @@ Ingesta datos de un sensor (usado por hardware ESP32 o bridges).
 
 ---
 
-## 📊 Referencia: campos de `care_weights`, `sensitivity_assessment` y `eval_intervals`
+## 6. Chat (Chatbot con Personalidad)
+
+### 6.1 `POST /chat/{plant_id}`
+
+Envía un mensaje a la planta y recibe su respuesta.
+
+**Request Body (JSON):**
+```json
+{
+  "message": "¿Cuánta agua necesito?",
+  "language": "es",
+  "response_format": "text"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "reply": "Necesito que me riegues cuando el suelo esté seco...",
+  "plant_id": "8e3fbfe9-2b4a-43c2-a4fa-1a234f2d5eab",
+  "timestamp": "2026-05-14T18:54:14Z",
+  "audio_url": null
+}
+```
+
+> `audio_url`: presente si `response_format="audio"` y `ELEVENLABS_API_KEY` está configurado.
+
+### 6.2 `GET /chat/{plant_id}/history`
+
+**Query params opcionales:** `?limit=50`
+
+**Response (200 OK):**
+```json
+{
+  "plant_id": "8e3fbfe9-2b4a-43c2-a4fa-1a234f2d5eab",
+  "messages": [
+    {
+      "role": "user",
+      "content": "¿Cuánta agua necesito?",
+      "timestamp": "2026-05-14T18:54:14Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Necesito que me riegues cuando el suelo esté seco...",
+      "timestamp": "2026-05-14T18:55:00Z"
+    }
+  ]
+}
+```
+
+### 6.3 `GET /chat/{plant_id}/voices`
+
+Devuelve las 3 opciones de voz disponibles para la planta (recomendada + 2 alternativas). Requiere que ELEVENLABS_API_KEY esté configurado.
+
+**Response (200 OK):**
+```json
+{
+  "plant_id": "8e3fbfe9-2b4a-43c2-a4fa-1a234f2d5eab",
+  "current_voice_id": "21m00Tcm4TlvDq8ikWAM",
+  "options": [
+    {
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "name": "Rachel",
+      "gender": "female",
+      "style": "calm",
+      "lang": "es",
+      "recommended": true
+    },
+    {
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "name": "Bella",
+      "gender": "female",
+      "style": "warm",
+      "lang": "es",
+      "recommended": false
+    },
+    {
+      "voice_id": "TxGEqnHWrfWFTfGW9XjX",
+      "name": "Antoni",
+      "gender": "male",
+      "style": "neutral",
+      "lang": "es",
+      "recommended": false
+    }
+  ]
+}
+```
+
+### 6.4 `PATCH /chat/{plant_id}/voice`
+
+Guarda la voz elegida por el usuario para su planta.
+
+**Request Body (JSON):**
+```json
+{
+  "voice_id": "21m00Tcm4TlvDq8ikWAM"
+}
+```
+
+**Response (200 OK):** mismo schema que `GET /chat/{plant_id}/voices`.
+
+---
+
+## Referencia: campos de `care_weights`, `sensitivity_assessment` y `eval_intervals`
 
 Introducidos en las migraciones `003_care_weights.sql` (pesos/sensibilidad) y `005` (intervalos).
 

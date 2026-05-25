@@ -82,3 +82,44 @@ async def test_openapi_has_health_endpoint():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         schema = (await c.get("/openapi.json")).json()
     assert "/api/v1/health" in schema["paths"]
+
+
+# ─── Rutas de chat (TTS) ──────────────────────────────────────────────────────
+
+def test_chat_routes_registered():
+    """Verifica que todas las rutas de chat documentadas en API_CONTRACT.md existen."""
+    paths = {route.path for route in app.routes}
+    expected_chat = {
+        "/api/v1/chat/{plant_id}",
+        "/api/v1/chat/{plant_id}/history",
+        "/api/v1/chat/{plant_id}/voices",
+        "/api/v1/chat/{plant_id}/voice",
+    }
+    missing = expected_chat - paths
+    assert not missing, f"Rutas de chat no registradas: {missing}"
+
+
+@pytest.mark.parametrize("method,path", [
+    ("POST", "/api/v1/chat/00000000-0000-0000-0000-000000000001"),
+    ("GET", "/api/v1/chat/00000000-0000-0000-0000-000000000001/history"),
+    ("GET", "/api/v1/chat/00000000-0000-0000-0000-000000000001/voices"),
+    ("PATCH", "/api/v1/chat/00000000-0000-0000-0000-000000000001/voice"),
+])
+async def test_chat_endpoints_require_auth(method, path):
+    """Endpoints de chat deben requerir JWT (401/403 sin Authorization header)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.request(method, path)
+    assert r.status_code in (401, 403), (
+        f"{method} {path} devolvió {r.status_code} en lugar de 401/403"
+    )
+
+
+async def test_sensors_endpoint_does_not_require_auth():
+    """POST /sensors NO requiere auth (diseñado para hardware IoT ESP32).
+    Documentado en API_CONTRACT.md sección 4.1."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/v1/sensors/", json={})
+    # Debe responder 422 (validation error por body vacío), NUNCA 401/403
+    assert r.status_code not in (401, 403), (
+        f"POST /sensors/ devolvió {r.status_code} — debería ser público para IoT"
+    )

@@ -1,26 +1,62 @@
-# CLAUDE.md — BackendGossipGarden
+# CLAUDE.md
 
-> **Contexto completo del sistema**: Lee [`AGENT_SKILLS.md`](AGENT_SKILLS.md) en la raíz de este repo antes de cualquier tarea. Contiene las skills de código reutilizables (DB clients, JWT, FastAPI scaffolding, Git flow), arquitectura de los 3 repos, API contract completo y reglas cross-repo.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+> **Full system context**: Read [`AGENT_SKILLS.md`](AGENT_SKILLS.md) first. It contains reusable code skills (DB clients, JWT, FastAPI scaffolding, Git flow), complete architecture of all 3 repos, full API contract, and cross-repo rules.
 
 ---
 
-## Commands
+## Quick Start
 
+**Prerequisites:**
+- Python 3.12+ (or use `uv`)
+- Populate `.env` from `.env.example`
+- Provide `firebase_credentials.json` OR set `FIREBASE_CREDENTIALS_JSON` env var with JSON string
+
+**Run locally:**
 ```bash
-# Run locally
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# Run with Docker (API + Redis, hot-reload)
-docker-compose up
-
-# Tests
-pytest                     # all tests
-pytest -m "not dbschema"   # unit tests only (mocks externos)
-pytest -m dbschema         # validación esquema DB (requiere postgres + pgvector)
-pytest --cov=app           # con cobertura
 ```
 
-Required before running: populate `.env` from `.env.example`, and provide `firebase_credentials.json` (or set `FIREBASE_CREDENTIALS_JSON` env var).
+**Run with Docker (API + Redis, hot-reload):**
+```bash
+docker-compose up
+```
+
+---
+
+## Testing
+
+```bash
+# All tests (unit + integration)
+pytest
+
+# Unit tests only (external services mocked)
+pytest -m "not dbschema"
+
+# Database schema validation (requires local Postgres + pgvector)
+pytest -m dbschema
+
+# With coverage
+pytest --cov=app
+
+# Single test file
+pytest tests/test_auth.py
+
+# Single test function
+pytest tests/test_auth.py::test_register_user
+
+# Verbose output
+pytest -v
+```
+
+**Local DB schema testing**: Start a Postgres container with pgvector:
+```bash
+docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=ci pgvector/pgvector:pg16
+PGPASSWORD=ci psql -h localhost -U postgres -d postgres -c "CREATE DATABASE gg_schema;"
+PGPASSWORD=ci psql -h localhost -U postgres -d gg_schema -f migrations/schema.sql
+pytest -m dbschema
+```
 
 ---
 
@@ -91,3 +127,35 @@ See `.env.example` for the full list. Notable ones:
 - `RAG_ENABLED`, `RAG_TOP_K`, `RAG_MIN_SIMILARITY` — tune RAG behavior
 - `MQTT_ENABLED` — opt-in; set `true` only when IoT broker is available
 - `ELEVENLABS_API_KEY` — TTS (branch feature/chatbot-TTS)
+
+---
+
+## Debugging & Common Issues
+
+**"App already exists" — Firebase initialization**
+- Firebase client is a singleton initialized once per process. In tests with `mock.patch`, ensure `firebase_admin._apps` is cleared if re-running inits.
+
+**"connection refused" — Redis/Postgres**
+- Docker: run `docker-compose up` first, or check ports: `docker ps`
+- Tests: unit tests mock these; only `pytest -m dbschema` needs real Postgres
+
+**"Token invalid" — Supabase JWT**
+- Verify `SUPABASE_JWKS_URL` and `SUPABASE_SERVICE_ROLE_KEY` are correct
+- Check `Authorization: Bearer <token>` header is present in requests
+
+**"Storage path wrong" — Firebase Storage uploads**
+- `FIREBASE_STORAGE_BUCKET` must be `project-id.appspot.com` (no `gs://` prefix)
+- `plants.photo_storage_path` is a path, not a full URL — e.g., `users/uuid/img.jpg`
+
+**Linting/formatting**
+- CI runs no linting checks (ruff/black/mypy). Code style is enforced via code review.
+
+---
+
+## Development Notes
+
+- **Async code**: All database and HTTP calls are async; use `async def` and `await` throughout.
+- **Dependency injection**: Use FastAPI `Depends()` for DB clients and auth — never import singletons directly in endpoint handlers.
+- **Schema first**: Always read `migrations/schema.sql` before writing DB queries; column names and constraints define behavior.
+- **No direct Firestore/Redis access in endpoints**: Use service layer (`app/services/`) to isolate DB logic.
+- **Structured Output**: Identification and personality generation use OpenAI's `response_format` parameter — test with actual API calls, not mocks.
