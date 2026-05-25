@@ -295,6 +295,14 @@ SENSOR_REFERENCE = {
 }
 
 
+# o-series reasoning models and gpt-5+ only accept the default temperature (1)
+_NO_CUSTOM_TEMPERATURE_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
+
+def _model_supports_temperature(model: str) -> bool:
+    return not any(model.startswith(p) for p in _NO_CUSTOM_TEMPERATURE_PREFIXES)
+
+
 class OpenAIServiceError(Exception):
     pass
 
@@ -324,8 +332,10 @@ async def generate_care_profile(
     effective_model = model or settings.OPENAI_PERSONALITY_MODEL
     client = _get_client()
 
+    supports_temp = _model_supports_temperature(effective_model)
     for attempt, temperature in enumerate([0.4, 0.0]):
         try:
+            extra_params: dict = {"temperature": temperature} if supports_temp else {}
             response = await client.chat.completions.create(
                 model=effective_model,
                 response_format={"type": "json_schema", "json_schema": CARE_PROFILE_JSON_SCHEMA},
@@ -339,7 +349,7 @@ async def generate_care_profile(
                         ),
                     },
                 ],
-                temperature=temperature,
+                **extra_params,
             )
 
             choice = response.choices[0]
