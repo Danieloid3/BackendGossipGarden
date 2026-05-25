@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.openai_service import OpenAISchemaViolationError, generate_care_profile
+from app.services.openai_service import (
+    OpenAISchemaViolationError,
+    _model_supports_temperature,
+    generate_care_profile,
+)
 
 
 def _make_choice(content: str, refusal=None, finish_reason="stop"):
@@ -100,3 +104,64 @@ async def test_embed_texts_returns_list_of_embeddings():
 
         assert len(result) == 2
         assert len(result[0]) == 1536
+
+
+# ---------------------------------------------------------------------------
+# _model_supports_temperature
+# ---------------------------------------------------------------------------
+
+def test_temperature_supported_for_gpt4o():
+    assert _model_supports_temperature("gpt-4o") is True
+
+
+def test_temperature_supported_for_gpt4o_mini():
+    assert _model_supports_temperature("gpt-4o-mini") is True
+
+
+def test_temperature_not_supported_for_gpt5():
+    assert _model_supports_temperature("gpt-5") is False
+
+
+def test_temperature_not_supported_for_gpt5_5():
+    assert _model_supports_temperature("gpt-5.5") is False
+
+
+def test_temperature_not_supported_for_o1():
+    assert _model_supports_temperature("o1") is False
+
+
+def test_temperature_not_supported_for_o3_mini():
+    assert _model_supports_temperature("o3-mini") is False
+
+
+def test_temperature_not_supported_for_o4_mini():
+    assert _model_supports_temperature("o4-mini") is False
+
+
+async def test_generate_care_profile_omits_temperature_for_incompatible_model(openai_profile):
+    with patch("app.services.openai_service._get_client") as mock_client_factory:
+        mock_client = AsyncMock()
+        mock_client_factory.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_completion(json.dumps(openai_profile))
+        )
+
+        await generate_care_profile(CANONICAL_PAYLOAD, model="gpt-5.5")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "temperature" not in call_kwargs
+
+
+async def test_generate_care_profile_includes_temperature_for_gpt4o(openai_profile):
+    with patch("app.services.openai_service._get_client") as mock_client_factory:
+        mock_client = AsyncMock()
+        mock_client_factory.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_completion(json.dumps(openai_profile))
+        )
+
+        await generate_care_profile(CANONICAL_PAYLOAD, model="gpt-4o")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "temperature" in call_kwargs
+        assert call_kwargs["temperature"] == 0.4
