@@ -1,13 +1,21 @@
+import urllib.parse
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
 from app.schemas.plants import PlantCreate, PlantResponse
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
+from app.core.config import settings
 from app.db.supabase import supabase
 from app.db.firebase import firebase_db
 from google.cloud.firestore import Query
 
 router = APIRouter()
+
+def _photo_url(path: str | None) -> str | None:
+    if not path or not settings.FIREBASE_STORAGE_BUCKET:
+        return None
+    encoded = urllib.parse.quote(path, safe='')
+    return f"https://firebasestorage.googleapis.com/v0/b/{settings.FIREBASE_STORAGE_BUCKET}/o/{encoded}?alt=media"
 
 @router.post("/", response_model=PlantResponse)
 async def create_plant(
@@ -32,7 +40,9 @@ async def create_plant(
         if not response.data:
             raise HTTPException(status_code=400, detail="No se pudo crear la planta.")
 
-        return response.data[0]
+        row = response.data[0]
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
 
     except Exception as e:
         raise HTTPException(
@@ -59,7 +69,10 @@ async def get_plants(
         # Obtener las plantas
         response = supabase.table('plants').select('*').eq('user_id', user_to_query).execute()
 
-        return response.data
+        plants = response.data
+        for plant in plants:
+            plant['photo_url'] = _photo_url(plant.get('photo_storage_path'))
+        return plants
 
     except HTTPException:
         raise
@@ -206,4 +219,23 @@ async def update_plant_photo(
     if not updated.data:
         raise HTTPException(status_code=500, detail="Error actualizando la foto de la planta.")
 
-    return updated.data[0]
+    row = updated.data[0]
+    row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+    return row
+
+
+@router.delete("/{plant_id}", status_code=204)
+async def delete_plant(
+    plant_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    plant_row = supabase.table("plants").select("user_id").eq("plant_id", plant_id).execute()
+    if not plant_row.data:
+        raise HTTPException(status_code=404, detail="Planta no encontrada.")
+    if plant_row.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta planta.")
+
+    try:
+        supabase.table("plants").delete().eq("plant_id", plant_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error eliminando la planta: {str(e)}")
