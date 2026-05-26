@@ -88,10 +88,13 @@ Authorization: Bearer <access_token>
   "health_status": "healthy",
   "health_score": 100.0,
   "photo_storage_path": null,
+  "photo_url": null,
   "created_at": "2024-05-11T12:00:00Z",
   "last_health_check": null
 }
 ```
+
+> `photo_url`: URL pública de Firebase Storage calculada en tiempo de respuesta a partir de `photo_storage_path`. `null` si la planta no tiene foto o `FIREBASE_STORAGE_BUCKET` no está configurado. No es una columna de BD. Usar directamente como `NetworkImage` en el cliente.
 
 ### 2.2 `GET /plants/`
 
@@ -108,6 +111,7 @@ Authorization: Bearer <access_token>
     "health_status": "healthy",
     "health_score": 100.0,
     "photo_storage_path": "plant_identifications/.../foto.jpeg",
+    "photo_url": "https://firebasestorage.googleapis.com/v0/b/project.appspot.com/o/plant_identifications%2F...%2Ffoto.jpeg?alt=media",
     "created_at": "2024-05-11T12:00:00Z",
     "last_health_check": null
   }
@@ -146,13 +150,38 @@ Sube o reemplaza la foto de una planta ya registrada (sin necesidad de re-identi
 **Request:** `multipart/form-data`
 - `image`: archivo JPEG/PNG/WebP (máx 8 MB)
 
-**Response (200 OK):**
+**Response (200 OK):** `PlantResponse` completo — mismo schema que `POST /plants/` incluyendo `photo_url` calculado.
+
 ```json
 {
   "plant_id": "8e3fbfe9-...",
-  "photo_storage_path": "plant_photos/be4a19f3-.../20260514T185414.jpeg"
+  "user_id": "UUID-DEL-USUARIO",
+  "species_id": "4b6e50ed-...",
+  "nickname": "Mi Rosal",
+  "health_status": "healthy",
+  "health_score": 100.0,
+  "photo_storage_path": "plant_photos/be4a19f3-.../20260514T185414.jpeg",
+  "photo_url": "https://firebasestorage.googleapis.com/v0/b/project.appspot.com/o/plant_photos%2Fbe4a19f3-...%2F20260514T185414.jpeg?alt=media",
+  "created_at": "2024-05-11T12:00:00Z",
+  "last_health_check": null
 }
 ```
+
+### 2.6 `DELETE /plants/{plant_id}`
+
+Elimina una planta del usuario autenticado.
+
+**Auth:** requerida (`Authorization: Bearer <token>`). Solo el propietario de la planta puede eliminarla.
+
+**Response (204 No Content):** sin cuerpo.
+
+**Errores:**
+
+| Status | Motivo |
+|---|---|
+| `403 Forbidden` | La planta existe pero pertenece a otro usuario |
+| `404 Not Found` | No existe ninguna planta con ese `plant_id` |
+| `500 Internal Server Error` | Error al ejecutar el DELETE en Supabase |
 
 ---
 
