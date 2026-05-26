@@ -40,7 +40,9 @@ async def create_plant(
         if not response.data:
             raise HTTPException(status_code=400, detail="No se pudo crear la planta.")
 
-        return response.data[0]
+        row = response.data[0]
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
 
     except Exception as e:
         raise HTTPException(
@@ -217,7 +219,9 @@ async def update_plant_photo(
     if not updated.data:
         raise HTTPException(status_code=500, detail="Error actualizando la foto de la planta.")
 
-    return updated.data[0]
+    row = updated.data[0]
+    row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+    return row
 
 
 @router.delete("/{plant_id}", status_code=204)
@@ -231,4 +235,7 @@ async def delete_plant(
     if plant_row.data[0]["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta planta.")
 
-    supabase.table("plants").delete().eq("plant_id", plant_id).execute()
+    try:
+        supabase.table("plants").delete().eq("plant_id", plant_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error eliminando la planta: {str(e)}")
