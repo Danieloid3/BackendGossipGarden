@@ -13,7 +13,14 @@ Nunca asumes el esquema de base de datos; te riges estrictamente por el esquema 
    - Historial de chat: clave `chat:{user_id}:{plant_id}`, TTL 2 horas.
    - Resúmenes compactados: clave `chat:summary:{user_id}:{plant_id}`, TTL 7 días.
 5. **Pipeline de Identificación** (`POST /api/v1/identify`): Orquesta plant.id (visión) → GBIF (taxonomía) → RAG sobre `botanical_chunks` con pgvector (`text-embedding-3-small`, 1536d) → OpenAI `gpt-4o` Structured Output (ficha de cuidado). Cacheo por `scientific_name`. La imagen se sube a Firebase Storage vía `BackgroundTask` y el path se devuelve en `CompletedResponse.photo_storage_path`. Ver `docs/species-schema-migration.md`.
-6. **LLM Chat** (`app/services/chat_service.py` + `app/api/v1/endpoints/chat.py`):
+6. **Plants API** (`app/api/v1/endpoints/plants.py`):
+   - `GET /api/v1/plants/` — lista plantas del usuario; incluye `photo_url` calculado en tiempo de respuesta a partir de `photo_storage_path` + `FIREBASE_STORAGE_BUCKET`. No es una columna de BD.
+   - `POST /api/v1/plants/` — crea planta; devuelve `PlantResponse` con `photo_url` calculado.
+   - `DELETE /api/v1/plants/{plant_id}` — elimina planta propia (204). Valida propiedad: 403 si no es el dueño, 404 si no existe.
+   - `PUT /api/v1/plants/{plant_id}/photo` — actualiza foto; devuelve `PlantResponse` con `photo_url` calculado.
+   - `PlantResponse.photo_url` es un campo **calculado**, no columna de BD. El helper `_photo_url(path)` en `plants.py` construye `https://firebasestorage.googleapis.com/v0/b/{BUCKET}/o/{encoded_path}?alt=media`. `test_db_schema_static.py` excluye este campo del check de columnas con el set `computed_fields`.
+
+7. **LLM Chat** (`app/services/chat_service.py` + `app/api/v1/endpoints/chat.py`):
    - Motor: **OpenAI** `AsyncOpenAI` con modelo `OPENAI_CHAT_MODEL` (default `gpt-4o`). NO usa Ollama.
    - Endpoints: `POST /api/v1/chat/{plant_id}` (bloqueo) y `GET /api/v1/chat/{plant_id}/history`. Sin streaming.
    - Memoria de dos niveles:
@@ -22,7 +29,7 @@ Nunca asumes el esquema de base de datos; te riges estrictamente por el esquema 
    - Compactación de contexto (`app/services/summarizer_service.py`): cuando el historial supera 3000 tokens, los mensajes antiguos se resumen con GPT. Los últimos 6 mensajes (3 turnos) nunca se compactan.
    - Inyecta en el system prompt: personalidad de especie (`species_ai_content.ai_personality_prompt`), guardrails (la planta no puede hablar de política/programación/etc.), estado actual de sensores (desde Firestore), y resumen de conversaciones previas.
    - Máximo 10 pares de turnos en historial activo.
-7. **Health Scoring** (`app/services/health_service.py`):
+8. **Health Scoring** (`app/services/health_service.py`):
    - Se invoca al ingerir datos de sensores.
    - Consulta `species_care_profiles` para obtener rangos ideales y pesos (`weight_*`).
    - Calcula score ponderado por parámetro (temp, luz, humedad aire, humedad suelo); default peso 0.25 cada uno.
