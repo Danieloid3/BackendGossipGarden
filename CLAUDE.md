@@ -107,7 +107,9 @@ Key constraints:
 - `species_ai_content`: UNIQUE on `(species_id, language)`.
 - `botanical_chunks`: queried via Supabase RPC `match_botanical_chunks(...)` using pgvector (1536-dim).
 - `plants.photo_storage_path`: path in Firebase Storage (not a full URL).
+- `plants.photo_url`: **computed field**, not a DB column. Built by `_photo_url()` in `app/api/v1/endpoints/plants.py` from `photo_storage_path` + `FIREBASE_STORAGE_BUCKET`. Returned by `GET /plants/`, `POST /plants/`, and `PUT /plants/{plant_id}/photo`. Excluded from schema validation via `computed_fields` in `tests/test_db_schema_static.py`.
 - `FIREBASE_STORAGE_BUCKET` must be `project-id.appspot.com` (no `gs://` prefix).
+- `DELETE /plants/{plant_id}`: returns 204; validates ownership (403 if not owner, 404 if not found).
 
 ---
 
