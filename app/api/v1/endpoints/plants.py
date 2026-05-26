@@ -17,6 +17,13 @@ def _photo_url(path: str | None) -> str | None:
     encoded = urllib.parse.quote(path, safe='')
     return f"https://firebasestorage.googleapis.com/v0/b/{settings.FIREBASE_STORAGE_BUCKET}/o/{encoded}?alt=media"
 
+def _flatten_species(row: dict) -> dict:
+    """Extrae common_name y scientific_name del join anidado con species."""
+    species_info = row.pop('species', None) or {}
+    row['common_name'] = species_info.get('common_name')
+    row['scientific_name'] = species_info.get('scientific_name')
+    return row
+
 @router.post("/", response_model=PlantResponse)
 async def create_plant(
     plant: PlantCreate,
@@ -40,7 +47,10 @@ async def create_plant(
         if not response.data:
             raise HTTPException(status_code=400, detail="No se pudo crear la planta.")
 
-        row = response.data[0]
+        plant_id = response.data[0]['plant_id']
+        fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        row = fetched.data[0]
+        _flatten_species(row)
         row['photo_url'] = _photo_url(row.get('photo_storage_path'))
         return row
 
@@ -66,11 +76,12 @@ async def get_plants(
             if not friendship.data:
                 raise HTTPException(status_code=403, detail="No tienes acceso a las plantas de este usuario.")
 
-        # Obtener las plantas
-        response = supabase.table('plants').select('*').eq('user_id', user_to_query).execute()
+        # Obtener las plantas con nombre de especie
+        response = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('user_id', user_to_query).execute()
 
         plants = response.data
         for plant in plants:
+            _flatten_species(plant)
             plant['photo_url'] = _photo_url(plant.get('photo_storage_path'))
         return plants
 
@@ -219,7 +230,9 @@ async def update_plant_photo(
     if not updated.data:
         raise HTTPException(status_code=500, detail="Error actualizando la foto de la planta.")
 
-    row = updated.data[0]
+    fetched = supabase.table("plants").select("*, species(common_name, scientific_name)").eq("plant_id", plant_id).execute()
+    row = fetched.data[0]
+    _flatten_species(row)
     row['photo_url'] = _photo_url(row.get('photo_storage_path'))
     return row
 
