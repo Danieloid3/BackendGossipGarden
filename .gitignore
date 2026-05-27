@@ -172,3 +172,10 @@ firebase_credentials.json
 httpRequests/
 *.http.run.xml
 auth.md
+
+# Planning docs and test assets (not part of the codebase)
+plan-*.md
+plan_*.md
+*.png
+*.jpeg
+*.jpg
