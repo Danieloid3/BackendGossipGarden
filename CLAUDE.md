@@ -2,10 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Full system context**: Read [`AGENT_SKILLS.md`](AGENT_SKILLS.md) first. It contains reusable code skills (DB clients, JWT, FastAPI scaffolding, Git flow), complete architecture of all 3 repos, full API contract, and cross-repo rules.
-
----
-
 ## Quick Start
 
 **Prerequisites:**
