@@ -20,8 +20,36 @@ from app.schemas.identification import (
     FaqItem,
     SensitivityAssessment,
 )
+from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
 
 logger = logging.getLogger(__name__)
+
+def _build_voice_schema() -> dict:
+    """Construye el fragmento de schema para la selección de voz."""
+    voice_enum = VOICE_IDS
+    voices_desc = "; ".join(
+        f"{v['id']} = {v['name']} ({v['gender']}, {v['style']}, lang:{v['lang']})"
+        for v in AVAILABLE_VOICES
+    )
+    return {
+        "elevenlabs_voice_id": {
+            "type": "string",
+            "enum": voice_enum,
+            "description": (
+                "Elige la voz de ElevenLabs que mejor encaje con la personalidad de esta planta. "
+                "Considera el género, el tono y el idioma predominante del chat. "
+                f"Voces disponibles: {voices_desc}"
+            ),
+        },
+        "elevenlabs_voice_alternatives": {
+            "type": "array",
+            "description": "Exactamente 2 voice_ids alternativos distintos al recomendado, que también encajen con la planta.",
+            "items": {"type": "string", "enum": voice_enum},
+            "minItems": 2,
+            "maxItems": 2,
+        },
+    }
+
 
 CARE_PROFILE_JSON_SCHEMA: dict = {
     "name": "plant_care_profile",
@@ -33,6 +61,7 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
             "care_weights", "sensitivity_assessment", "eval_intervals",
             "care_summary", "ai_personality_prompt", "care_tips",
             "fun_facts", "faq", "proposal_confidence", "reasoning_summary",
+            "elevenlabs_voice_id", "elevenlabs_voice_alternatives",
         ],
         "properties": {
             "scientific_name": {"type": "string"},
@@ -165,6 +194,7 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
                 "enum": ["high", "medium", "low"],
             },
             "reasoning_summary": {"type": "string"},
+            **_build_voice_schema(),
         },
         "additionalProperties": False,
     },
@@ -237,6 +267,12 @@ SYSTEM_PROMPT = (
     "El resultado final debe ser tan específico que no sirva para ninguna otra especie. "
     "Mínimo 300 palabras. Escrito en segunda persona ('Eres...' / 'Tu carácter es...').\n\n"
 
+    "REGLAS ESTRICTAS — VOZ (elevenlabs_voice_id / elevenlabs_voice_alternatives):\n"
+    "- Elige la voz que mejor encaje con el arquetipo de personalidad que acabas de definir.\n"
+    "- Considera: género del personaje, energía (dramático, chill, alegre, áspero), idioma del chat.\n"
+    "- elevenlabs_voice_id: la voz principal recomendada.\n"
+    "- elevenlabs_voice_alternatives: exactamente 2 voice_ids distintos al principal que también serían coherentes.\n"
+    "- No repitas el mismo voice_id en principales y alternativas.\n\n"
     "REGLAS ESTRICTAS — INTERVALOS DE EVALUACIÓN (eval_intervals):\n"
     "- Para cada parámetro, define cada cuántos minutos se debe evaluar según la biología de la especie.\n"
     "- Mínimo 30 minutos para cualquier parámetro.\n"
@@ -257,6 +293,14 @@ SENSOR_REFERENCE = {
     "air_sensor": "DHT22, °C y %RH directos",
     "normalization_rules": "min < max, humedad 0–100, lux >= 0, temperatura -10 a 60°C",
 }
+
+
+# o-series reasoning models and gpt-5+ only accept the default temperature (1)
+_NO_CUSTOM_TEMPERATURE_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
+
+def _model_supports_temperature(model: str) -> bool:
+    return not any(model.startswith(p) for p in _NO_CUSTOM_TEMPERATURE_PREFIXES)
 
 
 class OpenAIServiceError(Exception):
@@ -288,8 +332,10 @@ async def generate_care_profile(
     effective_model = model or settings.OPENAI_PERSONALITY_MODEL
     client = _get_client()
 
+    supports_temp = _model_supports_temperature(effective_model)
     for attempt, temperature in enumerate([0.4, 0.0]):
         try:
+            extra_params: dict = {"temperature": temperature} if supports_temp else {}
             response = await client.chat.completions.create(
                 model=effective_model,
                 response_format={"type": "json_schema", "json_schema": CARE_PROFILE_JSON_SCHEMA},
@@ -303,7 +349,7 @@ async def generate_care_profile(
                         ),
                     },
                 ],
-                temperature=temperature,
+                **extra_params,
             )
 
             choice = response.choices[0]
@@ -352,6 +398,8 @@ def _build_output(parsed: dict) -> CareProfileLlmOutput:
         faq=[FaqItem(**item) for item in parsed["faq"]],
         proposal_confidence=parsed["proposal_confidence"],
         reasoning_summary=parsed["reasoning_summary"],
+        elevenlabs_voice_id=parsed.get("elevenlabs_voice_id"),
+        elevenlabs_voice_alternatives=parsed.get("elevenlabs_voice_alternatives", []),
     )
 
 

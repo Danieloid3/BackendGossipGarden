@@ -19,5 +19,8 @@ class PlantResponse(BaseModel):
     health_status: str
     health_score: float
     photo_storage_path: Optional[str] = None
+    photo_url: Optional[str] = None
+    common_name: Optional[str] = None
+    scientific_name: Optional[str] = None
     created_at: datetime
     last_health_check: Optional[datetime] = None

@@ -245,5 +245,7 @@ def test_plant_response_fields_in_schema():
     from app.schemas.plants import PlantResponse
     schema_cols = _columns_in(SCHEMA_SQL, "plants")
     model_fields = set(PlantResponse.model_fields.keys())
-    missing = model_fields - schema_cols
+    # Campos calculados en tiempo de respuesta, no columnas de BD
+    computed_fields = {"photo_url", "common_name", "scientific_name"}
+    missing = model_fields - schema_cols - computed_fields
     assert not missing, f"PlantResponse tiene campos no presentes en plants: {missing}"

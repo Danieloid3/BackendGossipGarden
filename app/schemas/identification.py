@@ -107,6 +107,8 @@ class CareProfileLlmOutput(BaseModel):
     faq: list[FaqItem]
     proposal_confidence: Literal["high", "medium", "low"]
     reasoning_summary: str
+    elevenlabs_voice_id: str | None = None
+    elevenlabs_voice_alternatives: list[str] = []
 
 
 # ---- Respuesta discriminada del endpoint /identify ----------
