@@ -204,7 +204,7 @@ def _fetch_history_sync(plant_id: str, user_id: str, limit: int) -> list[dict]:
 def _save_exchange_sync(
     plant_id: str,
     user_id: str,
-    user_message: str,
+    user_message: str | None,
     reply: str,
     now_ms: int,
     audio_url: str | None = None,
@@ -219,15 +219,18 @@ def _save_exchange_sync(
     assistant_msg: dict = {"role": "assistant", "content": reply, "timestamp": now_str}
     if audio_url:
         assistant_msg["audio_url"] = audio_url
+
+    new_messages = []
+    if user_message is not None:
+        new_messages.append({"role": "user", "content": user_message, "timestamp": now_str})
+    new_messages.append(assistant_msg)
+
     doc_ref.set(
         {
             "user_id": user_id,
             "plant_id": plant_id,
             "updated_at": now_str,
-            "messages": ArrayUnion([
-                {"role": "user", "content": user_message, "timestamp": now_str},
-                assistant_msg,
-            ]),
+            "messages": ArrayUnion(new_messages),
         },
         merge=True,
     )
@@ -289,6 +292,7 @@ async def chat_with_plant(
     language: str,
     redis_client,
     response_format: str = "text",
+    is_proactive: bool = False,
 ) -> ChatResponse:
     # 1. Verificar ownership + cargar caché en paralelo
     plant_task = asyncio.to_thread(_verify_and_get_plant, plant_id, user_id)
@@ -321,7 +325,11 @@ async def chat_with_plant(
     system_content = build_system_with_summary(personality, summary, plant_status)
     llm_messages = [{"role": "system", "content": system_content}]
     llm_messages.extend(history)
-    llm_messages.append({"role": "user", "content": message})
+
+    if is_proactive:
+        llm_messages.append({"role": "system", "content": f"Instrucción urgente del sistema base: {message}"})
+    else:
+        llm_messages.append({"role": "user", "content": message})
 
     # 6. Llamar a GPT
     client = AsyncOpenAI(
@@ -341,10 +349,11 @@ async def chat_with_plant(
     now_ms = int(time.time() * 1000)
     now_str = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-    updated_history = (history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": reply},
-    ])[-(_HISTORY_MAX_TURNS * 2):]
+    updated_history = history.copy()
+    if not is_proactive:
+        updated_history.append({"role": "user", "content": message})
+    updated_history.append({"role": "assistant", "content": reply})
+    updated_history = updated_history[-(_HISTORY_MAX_TURNS * 2):]
 
     # 8. Generar audio si el cliente lo solicitó
     # La voz del usuario (plants) tiene prioridad sobre la recomendada de la especie
@@ -359,7 +368,7 @@ async def chat_with_plant(
 
     try:
         await asyncio.to_thread(
-            _save_exchange_sync, plant_id, user_id, message, reply, now_ms, audio_url
+            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url
         )
     except Exception as e:
         logger.error("Error guardando en Firestore: %s", e)

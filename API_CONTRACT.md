@@ -455,16 +455,38 @@ Devuelve las 3 opciones de voz disponibles para la planta (recomendada + 2 alter
 
 ### 6.4 `PATCH /chat/{plant_id}/voice`
 
-Guarda la voz elegida por el usuario para su planta.
+Guarda la voz elegida por el usuario para esa planta y la establece como la `current_voice_id`. Devuelve la estructura actualizada de voces para confirmar la selección.
 
 **Request Body (JSON):**
 ```json
 {
-  "voice_id": "21m00Tcm4TlvDq8ikWAM"
+  "voice_id": "string"
 }
 ```
 
 **Response (200 OK):** mismo schema que `GET /chat/{plant_id}/voices`.
+
+### 6.5 `POST /chat/{plant_id}/trigger-proactive` (Testing Endpoint)
+
+Endpoint de uso exclusivo para testing. Simula un disparo del Evaluador de Sensores en background. Fuerza a la IA a escribirle proactivamente al usuario debido a una anomalía sin que se registre el prompt oculto en la UI.
+
+**Headers:**
+- `Authorization: Bearer <jwt_token>`
+
+**Request Body (JSON):**
+```json
+{
+  "alert_message": "temperatura promedio (5°C) fuera de rango (18-25)"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "reply": "¡Uy qué frío hace! Siento mis hojitas congeladas, ¿podrías subir un poco la calefacción? 🥶"
+}
+```
 
 ---
 

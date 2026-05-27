@@ -244,3 +244,15 @@ ALTER TABLE species_care_profiles
   ADD COLUMN IF NOT EXISTS eval_interval_soil_hum_min  INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_soil_hum_min >= 30);
 
 COMMIT;
+
+-- ============================================================
+-- 007 — Eval tracking columns en plants
+-- ============================================================
+
+ALTER TABLE plants
+  ADD COLUMN IF NOT EXISTS last_eval_temp       TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_light      TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_air_hum    TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_soil_hum   TIMESTAMP;
+
+COMMIT;
