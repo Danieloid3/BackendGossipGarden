@@ -16,11 +16,11 @@ class SensorDataResponse(BaseModel):
     id: str
     sensor_id: Optional[str] = None
     mac_address: Optional[str] = None
-    plant_id: str
-    temperature_c: float
-    humidity_pct: float
-    soil_moisture_pct: float
-    light_lux: float
+    plant_id: Optional[str] = None
+    temperature_c: Optional[float] = None
+    humidity_pct: Optional[float] = None
+    soil_moisture_pct: Optional[float] = None
+    light_lux: Optional[float] = None
     health_score: Optional[float] = None
     health_status: Optional[str] = None
     timestamp: datetime

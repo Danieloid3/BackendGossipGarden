@@ -40,6 +40,7 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
         doc_data = {
             "sensor_id": sensor_id,
             "mac_address": data.get("mac_address", ""),
+            "plant_id": str(plant_id),
             "temperature_c": data.get("temperature_c", 0.0),
             "humidity_pct": data.get("humidity_pct", 0.0),
             "soil_moisture_pct": data.get("soil_moisture_pct", 0.0),

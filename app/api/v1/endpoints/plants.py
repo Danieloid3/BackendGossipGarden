@@ -127,6 +127,7 @@ async def get_latest_sensor_data(
 
         doc_dict = latest_doc.to_dict()
         doc_dict["id"] = latest_doc.id
+        doc_dict["plant_id"] = plant_id
         return doc_dict
 
     except HTTPException:
@@ -171,6 +172,7 @@ async def get_sensor_data_history(
         for doc in docs:
             doc_dict = doc.to_dict()
             doc_dict["id"] = doc.id
+            doc_dict["plant_id"] = plant_id
             history.append(doc_dict)
 
         return history
