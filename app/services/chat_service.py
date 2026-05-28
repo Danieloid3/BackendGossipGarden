@@ -384,6 +384,21 @@ async def chat_with_plant(
 
     await _save_cache(redis_client, user_id, plant_id, updated_history, summary, was_compacted)
 
+    # Push notificación al cliente. Para chat normal solo WS; para proactivo también FCM.
+    try:
+        from app.services import notification_service
+        await notification_service.notify(
+            user_id=user_id,
+            plant_id=plant_id,
+            plant_nickname=plant_row.get("nickname", "Tu planta"),
+            message=reply,
+            notification_type="proactive_alert" if is_proactive else "chat_message",
+            audio_url=audio_url,
+            send_fcm=is_proactive,
+        )
+    except Exception as e:
+        logger.error("notify falló (no rompe el chat): %s", e)
+
     return ChatResponse(reply=reply, plant_id=plant_id, timestamp=now_str, audio_url=audio_url)
 
 
