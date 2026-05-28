@@ -1,6 +1,6 @@
 import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.core.security import get_current_user
 from app.db.redis import get_redis_client
@@ -16,6 +16,8 @@ from app.services import chat_service
 
 router = APIRouter()
 
+class TriggerProactiveRequest(BaseModel):
+    alert_message: str
 
 def _verify_plant_access(plant_id: str, user_id: str) -> None:
     result = supabase.table("plants").select("user_id").eq("plant_id", plant_id).execute()
@@ -48,6 +50,52 @@ async def send_message(
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error procesando el mensaje: {str(e)}")
+
+
+@router.post("/{plant_id}/trigger-proactive")
+async def trigger_proactive_event(
+    plant_id: str,
+    body: TriggerProactiveRequest,
+    user_id: str = Depends(get_current_user),
+    redis=Depends(get_redis_client),
+):
+    """Endpoint de prueba para disparar un mensaje proactivo manualmente simulando el evaluador de sensores."""
+    try:
+        await asyncio.to_thread(_verify_plant_access, plant_id, user_id)
+
+        # Simulamos que esto proviene del evaluator_service guardando también un evento
+        supabase.table("events").insert(
+            {
+                "plant_id": plant_id,
+                "type": "chat",
+                "message": body.alert_message,
+            }
+        ).execute()
+
+        user_message = (
+            f"{body.alert_message}. Escribe un mensaje corto y natural al usuario (tu dueño) "
+            "para avisarle de esto de forma urgente pero proactiva, actuando siempre bajo tu "
+            "personalidad de planta, como si acabaras de notarlo."
+        )
+
+        # Esperamos el resultado en vez de mandarlo a un background task para poder ver la respuesta en Postman
+        resultado = await chat_service.chat_with_plant(
+            plant_id=plant_id,
+            user_id=user_id,
+            message=user_message,
+            language="es",
+            redis_client=redis,
+            response_format="text",
+            is_proactive=True,
+        )
+        return {"status": "success", "reply": resultado.reply}
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error disparando el evento proactivo: {str(e)}")
 
 
 @router.get("/{plant_id}/history", response_model=ChatHistoryResponse)

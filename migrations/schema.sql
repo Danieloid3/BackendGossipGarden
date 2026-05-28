@@ -178,6 +178,10 @@ CREATE TABLE plants (
   health_score       FLOAT,
   photo_storage_path   TEXT,
   last_health_check    TIMESTAMP,
+  last_eval_temp       TIMESTAMP,
+  last_eval_light      TIMESTAMP,
+  last_eval_air_hum    TIMESTAMP,
+  last_eval_soil_hum   TIMESTAMP,
   elevenlabs_voice_id  TEXT,
   created_at           TIMESTAMP DEFAULT NOW()
 );
