@@ -89,7 +89,25 @@ Confidence thresholds: `< 0.25` → needs more photos; `0.25–0.75` → user se
 
 ### Chatbot pipeline (`/api/v1/chat/{plant_id}/*`)
 
-Load `ai_personality_prompt` from `species_ai_content` → load plant health state → load history from Redis (fallback: Firestore) → context compaction if > 3000 tokens (summarize old messages, keep last 6) → topic guardrails → OpenAI `gpt-4o` → store in Redis + Firestore.
+Load `ai_personality_prompt` from `species_ai_content` → load plant health state → load history from Redis (fallback: Firestore) → context compaction if > 3000 tokens (summarize old messages, keep last 6) → topic guardrails → OpenAI `gpt-4o` → store in Redis + Firestore → **push real-time via `notification_service.notify()`**.
+
+### Real-time notifications (`/api/v1/notifications/*`, `/api/v1/devices/*`)
+
+Two parallel channels fan out from a single point (`notification_service.notify()`):
+
+- **WebSocket** (`WS /notifications/ws?token=<jwt>`): in-memory `ConnectionManager` (`app/services/websocket_manager.py`) keeps per-user connections. JWT goes in query string because WS clients can't reliably set headers. Stateful — if you scale beyond one Railway instance, add Redis pub/sub.
+- **FCM** (`app/services/fcm_service.py`): wraps `firebase_admin.messaging`. Reads tokens from `device_tokens` table. Auto-cleans dead tokens on `UNREGISTERED`/`invalid-argument`.
+
+Trigger points:
+- Inside `chat_with_plant()` — pushes the bot's reply at the end. `send_fcm=False` for normal chat (user is already in-app), `send_fcm=True` for `is_proactive=True` (evaluator alerts).
+- The evaluator (`evaluator_service.py`) needs no changes — it already calls `chat_with_plant(is_proactive=True)` in a background task; the notify happens automatically when that completes.
+
+`notify()` swallows all errors so a push failure can't break the chat response.
+
+Endpoints:
+- `POST /devices` upserts an FCM token (`{ token, platform: ios|android|web }`)
+- `DELETE /devices/{token}` (logout)
+- `GET /notifications?limit=50` returns history from `events` table, filtered to plants owned by the user
 
 ---
 
@@ -107,6 +125,8 @@ Key constraints:
 - `plants.common_name` / `plants.scientific_name`: **join-derived fields**, not DB columns on `plants`. Fetched via `select('*, species(common_name, scientific_name)')` and flattened by `_flatten_species(row)`. Also excluded via `computed_fields` in the schema test.
 - `FIREBASE_STORAGE_BUCKET` must be `project-id.appspot.com` (no `gs://` prefix).
 - `DELETE /plants/{plant_id}`: returns 204; validates ownership (403 if not owner, 404 if not found).
+- `device_tokens`: stores FCM push tokens per user. `ON DELETE CASCADE` from `users`. Token `UNIQUE` — upsert on conflict to support re-login across users.
+- `events`: log-only (no `read_at`/`user_id`). To query events for a user you must join through `plants.user_id`.
 
 ---
 
