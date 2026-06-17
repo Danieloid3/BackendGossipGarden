@@ -244,3 +244,18 @@ ALTER TABLE species_care_profiles
   ADD COLUMN IF NOT EXISTS eval_interval_soil_hum_min  INTEGER NOT NULL DEFAULT 60 CHECK (eval_interval_soil_hum_min >= 30);
 
 COMMIT;
+
+-- ============================================================
+-- 006 — Perfiles de cuidado por planta y ubicacion
+-- ============================================================
+
+ALTER TABLE species
+  ADD COLUMN IF NOT EXISTS origin TEXT;
+
+ALTER TABLE plants
+  ADD COLUMN IF NOT EXISTS estimated_age_months INTEGER,
+  ADD COLUMN IF NOT EXISTS location VARCHAR,
+  ADD COLUMN IF NOT EXISTS specific_care_tips JSONB;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS preferred_language VARCHAR DEFAULT 'es';

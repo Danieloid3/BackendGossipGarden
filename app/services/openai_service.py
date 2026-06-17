@@ -200,6 +200,23 @@ CARE_PROFILE_JSON_SCHEMA: dict = {
     },
 }
 
+PERSONALIZED_CARE_JSON_SCHEMA: dict = {
+    "name": "personalized_care_tips",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "required": ["watering", "light", "substrate", "humidity", "general_tip"],
+        "properties": {
+            "watering": {"type": "string", "description": "Instrucción específica de riego adaptada al clima"},
+            "light": {"type": "string", "description": "Instrucción de luz adaptada a la ubicación en casa"},
+            "substrate": {"type": "string", "description": "Sustrato recomendado para la especie y condiciones"},
+            "humidity": {"type": "string", "description": "Instrucciones de humedad ambiental"},
+            "general_tip": {"type": "string", "description": "Un tip útil y específico para esta planta"},
+        },
+        "additionalProperties": False,
+    },
+}
+
 SYSTEM_PROMPT = (
     "Eres un experto en botánica, horticultura y monitoreo de plantas con sensores IoT.\n\n"
     "Se te proporciona información de identificación de una planta (desde plant.id y GBIF) "
@@ -285,6 +302,19 @@ SYSTEM_PROMPT = (
 
     "- Responde siempre en el idioma indicado en output_language.\n"
     "- Devuelve únicamente el JSON del schema indicado, sin texto adicional."
+)
+
+PERSONALIZED_CARE_SYSTEM_PROMPT = (
+    "Eres un experto botánico y horticultor. Tu tarea es generar instrucciones hiper-personalizadas "
+    "de cuidado para una planta basándote en su especie, su ubicación dentro de la casa y la ciudad "
+    "donde vive el usuario, lo que determina el clima externo.\n\n"
+    "REGLAS ESTRICTAS:\n"
+    "- Adapta el riego y la humedad ambiental al clima de la ciudad proporcionada.\n"
+    "- Adapta la luz a la ubicación de la planta en el hogar.\n"
+    "- Si la edad de la planta es proporcionada, ajusta el cuidado (ej. plantas jóvenes necesitan más atención).\n"
+    "- Responde únicamente en formato JSON según el schema.\n"
+    "- Sé claro, directo y conciso.\n"
+    "- IMPORTANTE: Responde siempre en el idioma indicado."
 )
 
 SENSOR_REFERENCE = {
@@ -421,3 +451,37 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         all_embeddings.extend(item.embedding for item in response.data)
 
     return all_embeddings
+
+
+async def generate_personalized_care(
+    species_name: str,
+    location: str,
+    city: str,
+    language: str = "es",
+    estimated_age_months: int | None = None
+) -> dict:
+    """Genera tips de cuidado hiper-personalizados usando el modelo económico."""
+    client = _get_client()
+    model = settings.OPENAI_ECONOMIC_MODEL
+    
+    user_content = f"Especie: {species_name}\nUbicación en casa: {location}\nCiudad: {city}\nIdioma de respuesta: {language}"
+    if estimated_age_months:
+        user_content += f"\nEdad estimada: {estimated_age_months} meses"
+
+    response = await client.chat.completions.create(
+        model=model,
+        response_format={"type": "json_schema", "json_schema": PERSONALIZED_CARE_JSON_SCHEMA},
+        messages=[
+            {"role": "system", "content": PERSONALIZED_CARE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+    
+    choice = response.choices[0]
+    if choice.finish_reason == "content_filter":
+        raise OpenAISchemaViolationError("OpenAI rechazó la solicitud (content_filter)")
+    if choice.message.refusal:
+        raise OpenAISchemaViolationError(f"OpenAI rechazó la solicitud: {choice.message.refusal}")
+        
+    return json.loads(choice.message.content)
+

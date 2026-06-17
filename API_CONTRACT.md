@@ -167,7 +167,23 @@ Sube o reemplaza la foto de una planta ya registrada (sin necesidad de re-identi
 }
 ```
 
-### 2.6 `DELETE /plants/{plant_id}`
+### 2.6 `POST /plants/{plant_id}/personalized-care`
+
+Genera consejos de cuidado hiper-personalizados adaptados a la ciudad y la ubicación en la casa. Usa un modelo económico (`gpt-4o-mini`). Ideal para features premium.
+
+**Request Body (JSON):**
+```json
+{
+  "city": "Bogotá",
+  "language": "es"
+}
+```
+> `language` es opcional. Si no se provee, se usará el `preferred_language` del usuario (tabla `users`) o "es" por defecto.
+
+**Response (200 OK):**
+Devuelve el `PlantResponse` actualizado con la propiedad `specific_care_tips` populada (si no lo estaba antes).
+
+### 2.7 `DELETE /plants/{plant_id}`
 
 Elimina una planta del usuario autenticado.
 
