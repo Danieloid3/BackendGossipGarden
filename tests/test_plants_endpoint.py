@@ -9,6 +9,11 @@ async def test_generate_personalized_care_success(client):
     plant_mock_data = {
         "plant_id": "8e3fbfe9-2b4a-43c2-a4fa-1a234f2d5eab",
         "user_id": "00000000-0000-0000-0000-000000000001",
+        "species_id": "00000000-0000-0000-0000-000000000002",
+        "nickname": "Test Plant",
+        "health_status": "healthy",
+        "health_score": 100.0,
+        "created_at": "2026-05-28T14:00:00",
         "location": "Sala",
         "estimated_age_months": 24,
         "species": {"scientific_name": "Monstera deliciosa", "common_name": "Ceriman"}
