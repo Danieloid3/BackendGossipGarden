@@ -1,7 +1,7 @@
 import urllib.parse
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
-from app.schemas.plants import PlantCreate, PlantResponse
+from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -59,6 +59,60 @@ async def create_plant(
             status_code=500,
             detail=f"Error creando la planta: {str(e)}"
         )
+
+@router.post("/{plant_id}/personalized-care", response_model=PlantResponse)
+async def generate_personalized_care_tips(
+    plant_id: str,
+    request: PersonalizedCareRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Genera y guarda consejos de cuidado hiper-personalizados para una planta basándose en su especie, ubicación y ciudad (clima)."""
+    # Verificar que la planta pertenece al usuario
+    plant_row = supabase.table("plants").select("*, species(scientific_name)").eq("plant_id", plant_id).eq("user_id", user_id).execute()
+    if not plant_row.data:
+        raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+    
+    plant = plant_row.data[0]
+    
+    # Resolver idioma
+    language = request.language
+    if not language:
+        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        if user_row.data and user_row.data[0].get("preferred_language"):
+            language = user_row.data[0]["preferred_language"]
+        else:
+            language = "es"
+    
+    # Validar que tengamos la información necesaria
+    if not plant.get("location"):
+        raise HTTPException(status_code=400, detail="La planta no tiene una ubicación configurada (ej. 'Sala'). Configúrala primero.")
+    
+    scientific_name = plant["species"]["scientific_name"]
+    
+    from app.services.openai_service import generate_personalized_care
+    
+    try:
+        tips = await generate_personalized_care(
+            species_name=scientific_name,
+            location=plant["location"],
+            city=request.city,
+            language=language,
+            estimated_age_months=plant.get("estimated_age_months")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando tips de cuidado: {str(e)}")
+        
+    # Guardar los tips en la base de datos
+    updated = supabase.table("plants").update({"specific_care_tips": tips}).eq("plant_id", plant_id).execute()
+    
+    if not updated.data:
+        raise HTTPException(status_code=500, detail="Error guardando los tips de cuidado en la planta.")
+        
+    fetched = supabase.table("plants").select("*, species(common_name, scientific_name)").eq("plant_id", plant_id).execute()
+    row = fetched.data[0]
+    _flatten_species(row)
+    row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+    return row
 
 @router.get("/", response_model=List[PlantResponse])
 async def get_plants(

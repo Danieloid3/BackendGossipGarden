@@ -19,6 +19,7 @@ CREATE TABLE users (
   user_id     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   username    VARCHAR     NOT NULL,
   email       VARCHAR     NOT NULL UNIQUE,
+  preferred_language VARCHAR DEFAULT 'es',
   created_at  TIMESTAMP   DEFAULT NOW()
 );
 
@@ -31,6 +32,7 @@ CREATE TABLE species (
   gbif_taxon_key   INTEGER,
   inaturalist_id   INTEGER,
   source_provider  TEXT        DEFAULT 'legacy_backfill',
+  origin           TEXT,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
@@ -183,6 +185,9 @@ CREATE TABLE plants (
   last_eval_air_hum    TIMESTAMP,
   last_eval_soil_hum   TIMESTAMP,
   elevenlabs_voice_id  TEXT,
+  estimated_age_months INTEGER,
+  location             VARCHAR,
+  specific_care_tips   JSONB,
   created_at           TIMESTAMP DEFAULT NOW()
 );
 
