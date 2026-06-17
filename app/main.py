@@ -10,6 +10,7 @@ from app.db.supabase import supabase
 from app.db.firebase import firebase_db
 from app.api.v1.api import api_router
 from app.core.mqtt import start_mqtt_client, stop_mqtt_client
+from app.services.evaluator_service import start_evaluator, stop_evaluator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +52,10 @@ async def lifespan(app: FastAPI):
     start_mqtt_client()
     logger.info("Cliente MQTT de fondo iniciado.")
 
+    # 5. Iniciar loop del evaluador
+    start_evaluator()
+    logger.info("Loop del evaluador de sensores iniciado.")
+
     yield  # La aplicacin se ejecuta aqu
 
     # Lgica de shutdown
@@ -64,6 +69,9 @@ async def lifespan(app: FastAPI):
 
     stop_mqtt_client()
     logger.info("Cliente MQTT cancelado.")
+
+    stop_evaluator()
+    logger.info("Loop del evaluador cancelado.")
 
 # Inicializar FastAPI con el lifespan context manager
 app = FastAPI(title="Gossip Garden API", version="1.0.0", lifespan=lifespan)

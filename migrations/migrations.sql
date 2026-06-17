@@ -256,6 +256,20 @@ ALTER TABLE plants
   ADD COLUMN IF NOT EXISTS estimated_age_months INTEGER,
   ADD COLUMN IF NOT EXISTS location VARCHAR,
   ADD COLUMN IF NOT EXISTS specific_care_tips JSONB;
+  ADD COLUMN IF NOT EXISTS last_eval_temp       TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_light      TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_air_hum    TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_soil_hum   TIMESTAMP;
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS preferred_language VARCHAR DEFAULT 'es';
+-- 007 — Eval tracking columns en plants
+-- ============================================================
+
+ALTER TABLE plants
+  ADD COLUMN IF NOT EXISTS last_eval_temp       TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_light      TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_air_hum    TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_eval_soil_hum   TIMESTAMP;
+
+COMMIT;

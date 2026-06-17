@@ -471,16 +471,133 @@ Devuelve las 3 opciones de voz disponibles para la planta (recomendada + 2 alter
 
 ### 6.4 `PATCH /chat/{plant_id}/voice`
 
-Guarda la voz elegida por el usuario para su planta.
+Guarda la voz elegida por el usuario para esa planta y la establece como la `current_voice_id`. Devuelve la estructura actualizada de voces para confirmar la selección.
 
 **Request Body (JSON):**
 ```json
 {
-  "voice_id": "21m00Tcm4TlvDq8ikWAM"
+  "voice_id": "string"
 }
 ```
 
 **Response (200 OK):** mismo schema que `GET /chat/{plant_id}/voices`.
+
+### 6.5 `POST /chat/{plant_id}/trigger-proactive` (Testing Endpoint)
+
+Endpoint de uso exclusivo para testing. Simula un disparo del Evaluador de Sensores en background. Fuerza a la IA a escribirle proactivamente al usuario debido a una anomalía sin que se registre el prompt oculto en la UI.
+
+**Headers:**
+- `Authorization: Bearer <jwt_token>`
+
+**Request Body (JSON):**
+```json
+{
+  "alert_message": "temperatura promedio (5°C) fuera de rango (18-25)"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "reply": "¡Uy qué frío hace! Siento mis hojitas congeladas, ¿podrías subir un poco la calefacción? 🥶"
+}
+```
+
+---
+
+## 7. Notifications (Tiempo Real)
+
+Sistema de notificaciones push para que el usuario reciba en tiempo real los mensajes proactivos de sus plantas (cuando el evaluador detecta condiciones fuera de rango) y las respuestas del chat.
+
+Hay dos canales que se disparan al mismo tiempo desde el backend:
+
+- **WebSocket** — cuando la app está abierta. Push instantáneo dentro de la app.
+- **FCM (Firebase Cloud Messaging)** — cuando la app está cerrada o en segundo plano. Notificación del sistema operativo.
+
+### 7.1 `WS /notifications/ws?token=<jwt>`
+
+Conexión WebSocket persistente para recibir notificaciones en tiempo real. La autenticación se hace pasando el JWT como query param (los headers no son confiables en clientes WS).
+
+**Códigos de cierre:**
+- `4401` — token inválido o expirado.
+
+**Mensajes recibidos por el cliente (JSON):**
+```json
+{
+  "type": "chat_message" | "proactive_alert",
+  "plant_id": "uuid",
+  "plant_nickname": "Monstera Pepito",
+  "message": "¡Tengo sed! Hace 3 días que no me riegas",
+  "audio_url": "plant_audio/.../msg.mp3",
+  "timestamp": "2026-05-28T14:00:00+00:00"
+}
+```
+
+- `type: "chat_message"` — respuesta de la planta a un mensaje del usuario (solo WS, sin FCM).
+- `type: "proactive_alert"` — la planta avisa por iniciativa propia (WS + FCM).
+- `audio_url` puede ser `null` si la respuesta no incluye audio.
+
+El cliente no necesita enviar nada al servidor; solo escucha.
+
+### 7.2 `GET /notifications?limit=50`
+
+Histórico de eventos de las plantas del usuario, ordenado por timestamp descendente.
+
+**Response (200 OK):**
+```json
+{
+  "events": [
+    {
+      "event_id": "uuid",
+      "plant_id": "uuid",
+      "type": "chat",
+      "message": "Problemas detectados: humedad del suelo promedio (15.20) fuera de rango (30-70)",
+      "created_at": "2026-05-28T14:00:00"
+    }
+  ]
+}
+```
+
+Solo devuelve eventos de plantas que pertenecen al usuario autenticado.
+
+---
+
+## 8. Devices (Push Tokens)
+
+Registro de los tokens FCM de los dispositivos del usuario para enviar push notifications.
+
+### 8.1 `POST /devices`
+
+Registra (o actualiza) un token FCM para el dispositivo actual.
+
+**Request Body (JSON):**
+```json
+{
+  "token": "fGz9...token_FCM_completo",
+  "platform": "ios"
+}
+```
+
+`platform` debe ser uno de `"ios"`, `"android"` o `"web"`.
+
+**Response (201 Created):**
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "token": "fGz9...",
+  "platform": "ios",
+  "created_at": "2026-05-28T14:00:00",
+  "last_used_at": "2026-05-28T14:00:00"
+}
+```
+
+Si el token ya existía (caso re-login en otro usuario), se actualiza el `user_id`.
+
+### 8.2 `DELETE /devices/{token}`
+
+Elimina el token (logout o app desinstalada). Devuelve `204 No Content`.
 
 ---
 

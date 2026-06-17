@@ -180,3 +180,9 @@ plan_*.md
 *.png
 *.jpeg
 *.jpg
+
+# Supabase CLI temp files
+supabase/.temp/
+
+# Claude Code local settings
+.claude/

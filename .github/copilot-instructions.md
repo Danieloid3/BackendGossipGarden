@@ -29,13 +29,18 @@ Nunca asumes el esquema de base de datos; te riges estrictamente por el esquema 
    - Compactación de contexto (`app/services/summarizer_service.py`): cuando el historial supera 3000 tokens, los mensajes antiguos se resumen con GPT. Los últimos 6 mensajes (3 turnos) nunca se compactan.
    - Inyecta en el system prompt: personalidad de especie (`species_ai_content.ai_personality_prompt`), guardrails (la planta no puede hablar de política/programación/etc.), estado actual de sensores (desde Firestore), y resumen de conversaciones previas.
    - Máximo 10 pares de turnos en historial activo.
+   - Tiene integrado un flag `is_proactive` que permite al evaluador de sensores enviarle mensajes a la IA a través del `system prompt`, de modo que esta genere un saludo/alerta inicial y de emergencia sin dejar rastros en el log de usuario final (guardado selectivo unilateral en Firestore).
 8. **Health Scoring** (`app/services/health_service.py`):
    - Se invoca al ingerir datos de sensores.
    - Consulta `species_care_profiles` para obtener rangos ideales y pesos (`weight_*`).
    - Calcula score ponderado por parámetro (temp, luz, humedad aire, humedad suelo); default peso 0.25 cada uno.
    - Umbrales: >=80 "healthy", >=50 "warning", <50 "critical".
    - Actualiza `plants.health_score` y `plants.health_status` en Supabase.
-   - ⚠️ Los campos `eval_interval_*_min` de `species_care_profiles` existen en BD pero **aún no se consumen aquí**. La lógica de skip por intervalo (no evaluar si no ha pasado suficiente tiempo) es un paso pendiente.
+9. **Evaluador de Sensores (Background Cron)** (`app/services/evaluator_service.py`):
+   - Un bucle infinito que corre como tarea asíncrona atada al ciclo de vida de FastAPI (`evaluator_loop`).
+   - Revisa periódicamente (ej: 10 mins) los campos `eval_interval_*_min` en `species_care_profiles` frente a las columnas `last_eval_*` en la tabla `plants`.
+   - Cuando se cumple el tiempo biológico de la planta (ej: 120 mins), va a Firestore a buscar el `AVG` (promedio) de ese parámetro dentro de la ventana de ese tiempo específico.
+   - Si el promedio de los sensores sale de los límites de `species_care_profiles`, el sistema registra un incidente en `events` y despacha el modelo proactivo para advertir al usuario con el saludo inicial.
 
 ## Esquema Estricto de PostgreSQL (Supabase)
 El SQL canónico vive en `migrations/schema.sql` (BD desde cero) y `migrations/migrations.sql` (incrementales sobre BD legacy). Toda interacción relacional debe respetar estas tablas y tipos de datos:

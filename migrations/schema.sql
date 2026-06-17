@@ -180,6 +180,10 @@ CREATE TABLE plants (
   health_score       FLOAT,
   photo_storage_path   TEXT,
   last_health_check    TIMESTAMP,
+  last_eval_temp       TIMESTAMP,
+  last_eval_light      TIMESTAMP,
+  last_eval_air_hum    TIMESTAMP,
+  last_eval_soil_hum   TIMESTAMP,
   elevenlabs_voice_id  TEXT,
   estimated_age_months INTEGER,
   location             VARCHAR,
@@ -202,6 +206,21 @@ CREATE TABLE events (
   message     TEXT      NOT NULL,
   created_at  TIMESTAMP DEFAULT NOW()
 );
+
+-- ============================================================
+-- NOTIFICACIONES PUSH (FCM)
+-- ============================================================
+
+CREATE TABLE device_tokens (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token        TEXT        NOT NULL UNIQUE,
+  platform     TEXT        CHECK (platform IN ('ios', 'android', 'web')),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_device_tokens_user_id ON device_tokens(user_id);
 
 -- ============================================================
 -- SOCIAL
