@@ -1,8 +1,9 @@
 import logging
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Importar dependencias para asegurar validaciones en app startup
 from app.db.redis import redis_client
@@ -12,13 +13,9 @@ from app.api.v1.api import api_router
 from app.core.mqtt import start_mqtt_client, stop_mqtt_client
 from app.services.evaluator_service import start_evaluator, stop_evaluator
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger("gossip_garden")
-logger.setLevel(logging.INFO)
+from app.core.logging_config import setup_logging
+
+logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,3 +84,11 @@ app.add_middleware(
 
 # Registrar el router de la v1
 app.include_router(api_router, prefix="/api/v1")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception on {request.method} {request.url}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please check logs for details."}
+    )
