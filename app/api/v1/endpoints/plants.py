@@ -1,7 +1,9 @@
 import urllib.parse
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
-from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest
+import json
+import re
+from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest, PlantProfileResponse
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -205,8 +207,35 @@ async def get_plant_profile(
         if ai_res.data:
             ai_data = ai_res.data[0]
             ai_dto["care_summary"] = ai_data.get("care_summary")
-            ai_dto["ai_personality_prompt"] = ai_data.get("ai_personality_prompt")
+            ai_prompt = ai_data.get("ai_personality_prompt", "")
+            ai_dto["ai_personality_prompt"] = ai_prompt
             
+            # Dynamic parsing for personality traits and description
+            desc = "Una planta con personalidad única."
+            traits = ["Única", "Misteriosa"]
+            if ai_prompt:
+                match = re.search(r"2\. TONO Y CARÁCTER\n(.*?)(?:\n3\.|\Z)", ai_prompt, re.DOTALL)
+                if match:
+                    desc_text = match.group(1).strip()
+                    sentences = desc_text.split('. ')
+                    desc = sentences[0] + ('.' if not sentences[0].endswith('.') else '')
+                    
+                    eres_match = re.search(r"[Ee]res\s+([a-záéíóúñ,\s]+)\.", desc_text)
+                    if eres_match:
+                        words = [w.strip() for w in eres_match.group(1).split(',')]
+                        words = [w for w in words if w and len(w) > 3]
+                        if words:
+                            traits = []
+                            for w in words:
+                                for sub in w.split(' y '):
+                                    clean = sub.replace('algo ', '').replace('muy ', '').strip().capitalize()
+                                    if clean and len(clean) > 3:
+                                        traits.append(clean)
+                            traits = traits[:3]
+
+            ai_dto["personality_description"] = desc
+            ai_dto["personality_traits"] = traits
+
             def parse_json_list(val):
                 if not val:
                     return []

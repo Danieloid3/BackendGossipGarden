@@ -54,6 +54,8 @@ class CareRangesDTO(BaseModel):
 class SpeciesInfoDTO(BaseModel):
     care_summary: Optional[str] = None
     ai_personality_prompt: Optional[str] = None
+    personality_traits: list[str] = []
+    personality_description: Optional[str] = None
     care_tips: list[str] = []
     fun_facts: list[str] = []
     care_ranges: Optional[CareRangesDTO] = None
