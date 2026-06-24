@@ -52,11 +52,15 @@ async def identify(
     # Pero el usuario dice que el backend ya lo debería traer. Así que si no viene, usamos "es".
     
     from app.db.supabase import supabase
-    user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
     
     final_language = output_language
-    if user_row.data and user_row.data[0].get("preferred_language"):
-        final_language = user_row.data[0]["preferred_language"]
+    try:
+        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        if user_row.data and user_row.data[0].get("preferred_language"):
+            final_language = user_row.data[0]["preferred_language"]
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to fetch preferred_language (column might not exist): {e}")
 
     result = await pipeline.identify_from_image(
         image_bytes,
@@ -100,11 +104,14 @@ async def from_candidate(
     devuelve la ficha cacheada sin llamar a APIs externas.
     """
     from app.db.supabase import supabase
-    user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
-    
     final_language = body.output_language
-    if user_row.data and user_row.data[0].get("preferred_language"):
-        final_language = user_row.data[0]["preferred_language"]
+    try:
+        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        if user_row.data and user_row.data[0].get("preferred_language"):
+            final_language = user_row.data[0]["preferred_language"]
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to fetch preferred_language (column might not exist): {e}")
 
     return await pipeline.enrich_and_persist(
         body.candidate,

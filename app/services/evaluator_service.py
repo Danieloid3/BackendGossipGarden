@@ -73,8 +73,12 @@ async def evaluate_plant_parameters(plant: dict, care_profile: dict, now: dateti
             continue
 
         last_eval_str = plant.get(db_last)
-        last_eval = datetime.fromisoformat(last_eval_str.replace('Z', '+00:00')) if last_eval_str else datetime.min.replace(tzinfo=timezone.utc)
-
+        if last_eval_str:
+            last_eval = datetime.fromisoformat(last_eval_str.replace('Z', '+00:00'))
+            if last_eval.tzinfo is None:
+                last_eval = last_eval.replace(tzinfo=timezone.utc)
+        else:
+            last_eval = datetime.min.replace(tzinfo=timezone.utc)
         delta_minutes = (now - last_eval).total_seconds() / 60.0
 
         if delta_minutes >= interval_min:

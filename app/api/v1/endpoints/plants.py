@@ -77,11 +77,15 @@ async def generate_personalized_care_tips(
     # Resolver idioma
     language = request.language
     if not language:
-        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
-        if user_row.data and user_row.data[0].get("preferred_language"):
-            language = user_row.data[0]["preferred_language"]
-        else:
-            language = "es"
+        language = "es"
+        from app.db.supabase import supabase
+        try:
+            user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+            if user_row.data and user_row.data[0].get("preferred_language"):
+                language = user_row.data[0]["preferred_language"]
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to fetch preferred_language in plants.py: {e}")
     
     # Validar que tengamos la información necesaria
     if not plant.get("location"):
