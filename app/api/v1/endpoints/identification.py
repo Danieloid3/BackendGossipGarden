@@ -72,11 +72,17 @@ async def identify(
     # Generar el path antes del background task para incluirlo en la respuesta.
     # El app puede usarlo inmediatamente al crear la planta.
     photo_storage_path: str | None = None
-    if isinstance(result, CompletedResponse) and settings.FIREBASE_STORAGE_BUCKET:
-        photo_storage_path = compute_storage_path(
-            user_id, result.profile.scientific_name, content_type
-        )
-        result = result.model_copy(update={"photo_storage_path": photo_storage_path})
+    if settings.FIREBASE_STORAGE_BUCKET:
+        if isinstance(result, CompletedResponse):
+            photo_storage_path = compute_storage_path(
+                user_id, result.profile.scientific_name, content_type
+            )
+            result = result.model_copy(update={"photo_storage_path": photo_storage_path})
+        elif isinstance(result, NeedsUserSelectionResponse) and result.candidates:
+            photo_storage_path = compute_storage_path(
+                user_id, result.candidates[0].scientific_name, content_type
+            )
+            result = result.model_copy(update={"photo_storage_path": photo_storage_path})
 
     background_tasks.add_task(
         store_identification_result,
