@@ -40,3 +40,23 @@ class PlantResponse(BaseModel):
     estimated_age_months: Optional[int] = None
     location: Optional[str] = None
     specific_care_tips: Optional[Any] = None
+
+class CareRangesDTO(BaseModel):
+    min_temp_c: int
+    max_temp_c: int
+    min_light_lux: int
+    max_light_lux: int
+    min_air_humidity_pct: int
+    max_air_humidity_pct: int
+    min_soil_humidity_pct: int
+    max_soil_humidity_pct: int
+
+class SpeciesInfoDTO(BaseModel):
+    care_summary: Optional[str] = None
+    ai_personality_prompt: Optional[str] = None
+    care_tips: list[str] = []
+    fun_facts: list[str] = []
+    care_ranges: Optional[CareRangesDTO] = None
+
+class PlantProfileResponse(PlantResponse):
+    species_info: SpeciesInfoDTO

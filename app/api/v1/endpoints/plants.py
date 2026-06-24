@@ -151,6 +151,86 @@ async def get_plants(
             detail=f"Error obteniendo las plantas: {str(e)}"
         )
 
+@router.get("/{plant_id}/profile", response_model=PlantProfileResponse)
+async def get_plant_profile(
+    plant_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        import json
+        # Fetch the plant
+        plant_res = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        if not plant_res.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada.")
+            
+        plant_row = plant_res.data[0]
+        plant_owner_id = plant_row['user_id']
+
+        if plant_owner_id != user_id:
+            user_low = min(user_id, plant_owner_id)
+            user_high = max(user_id, plant_owner_id)
+            friendship = supabase.table('friendships').select('status').eq('user_low_id', user_low).eq('user_high_id', user_high).eq('status', 'accepted').execute()
+            if not friendship.data:
+                raise HTTPException(status_code=403, detail="No tienes acceso al perfil de esta planta.")
+
+        _flatten_species(plant_row)
+        plant_row['photo_url'] = _photo_url(plant_row.get('photo_storage_path'))
+        species_id = plant_row['species_id']
+
+        # Fetch care ranges
+        care_ranges_res = supabase.table('species_care_profiles').select('*').eq('species_id', species_id).execute()
+        care_ranges_dto = None
+        if care_ranges_res.data:
+            cr = care_ranges_res.data[0]
+            care_ranges_dto = {
+                "min_temp_c": cr.get("min_temp_c", 0),
+                "max_temp_c": cr.get("max_temp_c", 0),
+                "min_light_lux": cr.get("min_light_lux", 0),
+                "max_light_lux": cr.get("max_light_lux", 0),
+                "min_air_humidity_pct": cr.get("min_air_humidity_pct", 0),
+                "max_air_humidity_pct": cr.get("max_air_humidity_pct", 0),
+                "min_soil_humidity_pct": cr.get("min_soil_humidity_pct", 0),
+                "max_soil_humidity_pct": cr.get("max_soil_humidity_pct", 0),
+            }
+
+        # Fetch AI content
+        ai_res = supabase.table('species_ai_content').select('*').eq('species_id', species_id).limit(1).execute()
+        ai_dto = {
+            "care_summary": None,
+            "ai_personality_prompt": None,
+            "care_tips": [],
+            "fun_facts": [],
+            "care_ranges": care_ranges_dto
+        }
+        if ai_res.data:
+            ai_data = ai_res.data[0]
+            ai_dto["care_summary"] = ai_data.get("care_summary")
+            ai_dto["ai_personality_prompt"] = ai_data.get("ai_personality_prompt")
+            
+            def parse_json_list(val):
+                if not val:
+                    return []
+                if isinstance(val, list):
+                    return val
+                try:
+                    return json.loads(val)
+                except:
+                    return []
+                    
+            ai_dto["care_tips"] = parse_json_list(ai_data.get("care_tips"))
+            ai_dto["fun_facts"] = parse_json_list(ai_data.get("fun_facts"))
+
+        plant_row["species_info"] = ai_dto
+        return plant_row
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo el perfil de la planta: {str(e)}"
+        )
+
 @router.get("/{plant_id}/sensor-data/latest", response_model=SensorDataResponse)
 async def get_latest_sensor_data(
     plant_id: str,
