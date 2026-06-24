@@ -51,8 +51,7 @@ async def identify(
     # Quitamos la validación estricta de idiomas aquí, o la aplicamos solo al input inicial.
     # Pero el usuario dice que el backend ya lo debería traer. Así que si no viene, usamos "es".
     
-    from app.db.supabase import get_supabase_client
-    supabase = get_supabase_client()
+    from app.db.supabase import supabase
     user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
     
     final_language = output_language
@@ -100,8 +99,7 @@ async def from_candidate(
     Es idempotente: si la especie ya existe con contenido en el idioma solicitado,
     devuelve la ficha cacheada sin llamar a APIs externas.
     """
-    from app.db.supabase import get_supabase_client
-    supabase = get_supabase_client()
+    from app.db.supabase import supabase
     user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
     
     final_language = body.output_language
