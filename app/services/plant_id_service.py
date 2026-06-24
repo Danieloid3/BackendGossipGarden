@@ -58,6 +58,7 @@ async def identify(
     *,
     latitude: float | None = None,
     longitude: float | None = None,
+    language: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> list[PlantIdCandidate]:
     """POST multipart a /identification. Devuelve candidatos ordenados por probability desc."""
@@ -78,6 +79,8 @@ async def identify(
     }
 
     params = {"details": settings.PLANT_ID_DETAILS}
+    if language is not None:
+        params["language"] = language[:2].lower()
 
     own_client = client is None
     if own_client:

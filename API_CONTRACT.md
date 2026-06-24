@@ -53,6 +53,8 @@ Authorization: Bearer <access_token>
 
 ### 1.3 `GET /auth/google-url`
 
+**Query params opcionales:** `?redirect_to=URL` (default `http://localhost:3000/auth/callback`)
+
 **Response (200 OK):**
 ```json
 {
@@ -72,11 +74,15 @@ Authorization: Bearer <access_token>
 {
   "species_id": "4b6e50ed-3088-4f81-8d2a-4ce1f6e2bdee",
   "nickname": "Mi Rosal",
-  "photo_storage_path": "plant_identifications/.../foto.jpeg"
+  "photo_storage_path": "plant_identifications/.../foto.jpeg",
+  "estimated_age_months": 6,
+  "location": "Sala"
 }
 ```
 
 > `photo_storage_path` es opcional. Si viene de `/identify`, usar el valor `photo_storage_path` devuelto en esa respuesta.
+> `estimated_age_months` es opcional. Edad estimada de la planta al momento de adopción.
+> `location` es opcional. Ubicación en casa (ej. "Sala", "Balcón").
 
 **Response (200 OK):**
 ```json
@@ -89,12 +95,19 @@ Authorization: Bearer <access_token>
   "health_score": 100.0,
   "photo_storage_path": null,
   "photo_url": null,
+  "common_name": "Rosa",
+  "scientific_name": "Rosa gallica",
   "created_at": "2024-05-11T12:00:00Z",
-  "last_health_check": null
+  "last_health_check": null,
+  "estimated_age_months": 6,
+  "location": "Sala",
+  "specific_care_tips": null
 }
 ```
 
 > `photo_url`: URL pública de Firebase Storage calculada en tiempo de respuesta a partir de `photo_storage_path`. `null` si la planta no tiene foto o `FIREBASE_STORAGE_BUCKET` no está configurado. No es una columna de BD. Usar directamente como `NetworkImage` en el cliente.
+> `common_name` y `scientific_name`: extraídos del join con la tabla `species`. Pueden ser `null` si la especie no tiene esos datos.
+> `specific_care_tips`: consejos personalizados generados por IA. `null` hasta que se llame a `POST /plants/{plant_id}/personalized-care`.
 
 ### 2.2 `GET /plants/`
 
@@ -112,8 +125,13 @@ Authorization: Bearer <access_token>
     "health_score": 100.0,
     "photo_storage_path": "plant_identifications/.../foto.jpeg",
     "photo_url": "https://firebasestorage.googleapis.com/v0/b/project.appspot.com/o/plant_identifications%2F...%2Ffoto.jpeg?alt=media",
+    "common_name": "Rosa",
+    "scientific_name": "Rosa gallica",
     "created_at": "2024-05-11T12:00:00Z",
-    "last_health_check": null
+    "last_health_check": null,
+    "estimated_age_months": 6,
+    "location": "Sala",
+    "specific_care_tips": null
   }
 ]
 ```
@@ -162,8 +180,13 @@ Sube o reemplaza la foto de una planta ya registrada (sin necesidad de re-identi
   "health_score": 100.0,
   "photo_storage_path": "plant_photos/be4a19f3-.../20260514T185414.jpeg",
   "photo_url": "https://firebasestorage.googleapis.com/v0/b/project.appspot.com/o/plant_photos%2Fbe4a19f3-...%2F20260514T185414.jpeg?alt=media",
+  "common_name": "Rosa",
+  "scientific_name": "Rosa gallica",
   "created_at": "2024-05-11T12:00:00Z",
-  "last_health_check": null
+  "last_health_check": null,
+  "estimated_age_months": 6,
+  "location": "Sala",
+  "specific_care_tips": null
 }
 ```
 

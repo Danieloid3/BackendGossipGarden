@@ -48,14 +48,22 @@ async def identify(
     if len(image_bytes) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Imagen demasiado grande (máx 8 MB)")
 
-    if output_language not in {"es", "en", "fr", "pt", "de", "it"}:
-        raise HTTPException(status_code=422, detail=f"Idioma no soportado: {output_language}")
+    # Quitamos la validación estricta de idiomas aquí, o la aplicamos solo al input inicial.
+    # Pero el usuario dice que el backend ya lo debería traer. Así que si no viene, usamos "es".
+    
+    from app.db.supabase import get_supabase_client
+    supabase = get_supabase_client()
+    user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+    
+    final_language = output_language
+    if user_row.data and user_row.data[0].get("preferred_language"):
+        final_language = user_row.data[0]["preferred_language"]
 
     result = await pipeline.identify_from_image(
         image_bytes,
         latitude=latitude,
         longitude=longitude,
-        output_language=output_language,
+        output_language=final_language,
     )
 
     # Generar el path antes del background task para incluirlo en la respuesta.
@@ -75,7 +83,7 @@ async def identify(
         storage_path=photo_storage_path,
         latitude=latitude,
         longitude=longitude,
-        output_language=output_language,
+        output_language=final_language,
     )
 
     return result
@@ -92,7 +100,15 @@ async def from_candidate(
     Es idempotente: si la especie ya existe con contenido en el idioma solicitado,
     devuelve la ficha cacheada sin llamar a APIs externas.
     """
+    from app.db.supabase import get_supabase_client
+    supabase = get_supabase_client()
+    user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+    
+    final_language = body.output_language
+    if user_row.data and user_row.data[0].get("preferred_language"):
+        final_language = user_row.data[0]["preferred_language"]
+
     return await pipeline.enrich_and_persist(
         body.candidate,
-        output_language=body.output_language,
+        output_language=final_language,
     )
