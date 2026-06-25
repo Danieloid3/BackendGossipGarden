@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
 import json
 import re
-from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest, PlantProfileResponse
+from datetime import datetime, timezone
+from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest, PlantProfileResponse, PlantActionRequest
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -42,6 +43,8 @@ async def create_plant(
         }
         if plant.photo_storage_path:
             plant_data["photo_storage_path"] = plant.photo_storage_path
+        if plant.mac_address:
+            plant_data["mac_address"] = plant.mac_address
 
         # Insertar en Supabase
         response = supabase.table('plants').insert(plant_data).execute()
@@ -60,6 +63,51 @@ async def create_plant(
         raise HTTPException(
             status_code=500,
             detail=f"Error creando la planta: {str(e)}"
+        )
+
+@router.post("/{plant_id}/actions", response_model=PlantResponse)
+async def perform_plant_action(
+    plant_id: str,
+    action_req: PlantActionRequest,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        # Verificar que la planta pertenece al usuario
+        plant_check = supabase.table('plants').select('health_score').eq('plant_id', plant_id).eq('user_id', user_id).execute()
+        if not plant_check.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+            
+        current_health = plant_check.data[0].get('health_score', 100.0)
+        if current_health is None:
+            current_health = 100.0
+            
+        updates = {}
+        if action_req.action_type == "water":
+            updates["last_watered"] = datetime.now(timezone.utc).isoformat()
+            new_health = min(100.0, current_health + 10.0)
+            updates["health_score"] = new_health
+            updates["last_health_check"] = datetime.now(timezone.utc).isoformat()
+        else:
+            updates["last_health_check"] = datetime.now(timezone.utc).isoformat()
+            
+        # Actualizar en Supabase
+        updated = supabase.table('plants').update(updates).eq('plant_id', plant_id).execute()
+        
+        if not updated.data:
+            raise HTTPException(status_code=500, detail="Error al registrar la acción.")
+            
+        fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        row = fetched.data[0]
+        _flatten_species(row)
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error registrando la acción: {str(e)}"
         )
 
 @router.post("/{plant_id}/personalized-care", response_model=PlantResponse)

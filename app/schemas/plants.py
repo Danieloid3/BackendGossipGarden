@@ -19,10 +19,14 @@ class PlantCreate(BaseModel):
     )
     estimated_age_months: Optional[int] = Field(None, description="Edad estimada al momento de adopción")
     location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
+    mac_address: Optional[str] = Field(None, description="MAC Address del sensor vinculado")
 
 class PersonalizedCareRequest(BaseModel):
     city: str = Field(..., description="Ciudad o región para adaptar el clima")
     language: Optional[str] = Field(None, description="Idioma deseado para los consejos (ej. 'es', 'en')")
+
+class PlantActionRequest(BaseModel):
+    action_type: str = Field(..., description="Tipo de acción: water, fertilize, prune, etc.")
 
 class PlantResponse(BaseModel):
     plant_id: UUID
@@ -37,8 +41,10 @@ class PlantResponse(BaseModel):
     scientific_name: Optional[str] = None
     created_at: datetime
     last_health_check: Optional[datetime] = None
+    last_watered: Optional[datetime] = None
     estimated_age_months: Optional[int] = None
     location: Optional[str] = None
+    mac_address: Optional[str] = None
     specific_care_tips: Optional[Any] = None
 
 class CareRangesDTO(BaseModel):

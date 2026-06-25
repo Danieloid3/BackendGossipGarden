@@ -49,7 +49,6 @@ async def identify_from_image(
             image_bytes,
             latitude=latitude,
             longitude=longitude,
-            language=output_language,
         )
     except PlantIdAuthError as e:
         logger.critical("PLANTA ID AUTH ERROR — revisar PLANT_ID_API_KEY: %s", e)

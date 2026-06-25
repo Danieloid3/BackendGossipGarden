@@ -10,6 +10,7 @@ from app.schemas.identification import (
     CompletedResponse,
     FromCandidateRequest,
     IdentifyResponse,
+    PlantIdCandidate,
 )
 from app.services import identification_pipeline as pipeline
 from app.services.image_storage_service import compute_storage_path, store_identification_result
@@ -123,3 +124,53 @@ async def from_candidate(
         body.candidate,
         output_language=final_language,
     )
+
+
+@router.get("/species/search", response_model=list[PlantIdCandidate])
+async def search_species(
+    q: str,
+    user_id: str = Depends(get_current_user),
+) -> list[PlantIdCandidate]:
+    """Busca especies por nombre común o científico en la BD local o vía GBIF."""
+    from app.db.supabase import supabase
+    from app.services.gbif_service import search_species_by_name
+
+    query = f"%{q}%"
+    res = supabase.table("species").select("*").or_(f"scientific_name.ilike.{query},common_name.ilike.{query}").limit(10).execute()
+    
+    candidates = []
+    seen_scientific = set()
+    
+    for row in res.data:
+        sci_name = row.get("scientific_name")
+        if sci_name and sci_name not in seen_scientific:
+            candidates.append(
+                PlantIdCandidate(
+                    scientific_name=sci_name,
+                    common_names=[row["common_name"]] if row.get("common_name") else [],
+                    probability=1.0,
+                    gbif_id=row.get("gbif_taxon_key"),
+                    inaturalist_id=row.get("inaturalist_id"),
+                )
+            )
+            seen_scientific.add(sci_name)
+
+    # Fallback a GBIF si hay pocos resultados
+    if len(candidates) < 3:
+        try:
+            gbif_taxonomy = await search_species_by_name(q)
+            if gbif_taxonomy and gbif_taxonomy.scientific_name not in seen_scientific:
+                candidates.append(
+                    PlantIdCandidate(
+                        scientific_name=gbif_taxonomy.scientific_name,
+                        common_names=[v["name"] for v in gbif_taxonomy.vernacular_names if v.get("name")],
+                        probability=1.0,
+                        gbif_id=gbif_taxonomy.key,
+                        taxonomy=gbif_taxonomy.model_dump(),
+                    )
+                )
+        except Exception as e:
+            import logging
+            logging.warning(f"GBIF search failed for '{q}': {e}")
+
+    return candidates
