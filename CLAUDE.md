@@ -178,3 +178,63 @@ See `.env.example` for the full list. Notable ones:
 - **Schema first**: Always read `migrations/schema.sql` before writing DB queries; column names and constraints define behavior.
 - **No direct Firestore/Redis access in endpoints**: Use service layer (`app/services/`) to isolate DB logic.
 - **Structured Output**: Identification and personality generation use OpenAI's `response_format` parameter — test with actual API calls, not mocks.
+
+---
+
+## ⚠️ Known Bugs — Backlog
+
+Issues identificados pero pendientes de corrección. Actualizados el 2026-06-25.
+
+### 🔴 Bug #3 — `POST /sensors/` sin autenticación ni validación de MAC
+**Archivo:** `app/api/v1/endpoints/sensors.py`
+
+El endpoint no requiere JWT y no valida que el `mac_address` del payload corresponda al registrado en la tabla `sensors` para esa planta. Cualquier agente externo que conozca un `plant_id` (UUID visible en respuestas de la API) puede enviar lecturas falsas y manipular el `health_score` + `health_status` de una planta ajena.
+
+**Mitigaciones pendientes:**
+1. Añadir validación: al recibir datos, verificar que `mac_address` (si se provee) coincide con el `mac_address` en la tabla `sensors` para ese `plant_id`.
+2. Considerar un API key por sensor en el header `X-Sensor-Key` para ambientes de producción.
+3. O habilitar IP whitelist a nivel de proxy/load balancer.
+
+---
+
+### 🔴 Bug #4 — Evaluador hace `SELECT *` de **todas** las plantas sin límite
+**Archivo:** `app/services/evaluator_service.py` → `evaluate_all_plants()`
+
+```python
+plants_res = supabase.table("plants").select("*").execute()  # ← sin LIMIT
+```
+
+El evaluador corre cada 10 minutos y carga la tabla `plants` completa en memoria del servidor, incluyendo `specific_care_tips` (JSONB potencialmente grande). Con escala (>1000 plantas) esto será una query costosa que puede causar OOM y timeouts.
+
+**Solución propuesta:** Paginar con `range()` o solo seleccionar las columnas necesarias (`plant_id, user_id, species_id, last_eval_temp, last_eval_light, last_eval_air_hum, last_eval_soil_hum`). Añadir paginación en lotes de 100-200 plantas.
+
+---
+
+### 🟡 Bug #6 — Alertas del evaluador se guardan con `type: "chat"` en vez de `"alert"`
+**Archivo:** `app/services/evaluator_service.py` → `handle_alerts()`
+
+```python
+supabase.table("events").insert({
+    "plant_id": plant_id,
+    "type": "chat",   # ← debería ser "alert"
+    ...
+})
+```
+
+El schema de la tabla `events` soporta `alert | insight | chat | system`, pero todos los eventos del evaluador se registran como `"chat"`. El frontend no puede distinguir una alerta crítica de sensor de una respuesta de conversación normal.
+
+**Solución propuesta:** Cambiar `"type": "chat"` a `"type": "alert"` en `handle_alerts()`. Revisar si el frontend ya filtra por tipo.
+
+---
+
+### 🟡 Bug #9 — Sistema de Friendships implementado en BD pero sin endpoints
+**Archivos:** `app/api/v1/endpoints/plants.py`, `app/api/v1/endpoints/` (ausente)
+
+La tabla `friendships` existe en `schema.sql` con soporte para `pending | accepted | blocked`. Su lógica de verificación ya está integrada en `GET /plants/`, `GET /plants/{id}/sensor-data/*` y `GET /plants/{id}/profile`. Sin embargo, no existe ningún endpoint para:
+- `POST /friendships/` — enviar solicitud
+- `GET /friendships/` — listar amigos y solicitudes pendientes
+- `PATCH /friendships/{id}` — aceptar/rechazar solicitud
+- `DELETE /friendships/{id}` — eliminar amistad
+
+La feature social está completamente bloqueada del lado del cliente.
+

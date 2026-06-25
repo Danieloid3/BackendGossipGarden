@@ -43,8 +43,10 @@ async def create_plant(
         }
         if plant.photo_storage_path:
             plant_data["photo_storage_path"] = plant.photo_storage_path
-        if plant.mac_address:
-            plant_data["mac_address"] = plant.mac_address
+        if plant.estimated_age_months is not None:
+            plant_data["estimated_age_months"] = plant.estimated_age_months
+        if plant.location:
+            plant_data["location"] = plant.location
 
         # Insertar en Supabase
         response = supabase.table('plants').insert(plant_data).execute()
@@ -77,6 +79,8 @@ async def update_plant(
             raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
             
         updates = update_data.model_dump(exclude_unset=True)
+        # Fix #7: filtrar Nones explícitos — PATCH no debe nullificar campos involuntariamente
+        updates = {k: v for k, v in updates.items() if v is not None}
         if not updates:
             raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar.")
             

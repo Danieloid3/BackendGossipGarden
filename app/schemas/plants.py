@@ -3,12 +3,6 @@ from uuid import UUID
 from datetime import datetime
 from typing import Optional, Any
 
-class CareTips(BaseModel):
-    watering: str
-    light: str
-    substrate: str
-    humidity: str
-    general_tip: str
 
 class PlantCreate(BaseModel):
     species_id: UUID = Field(..., description="UUID de la especie en la tabla species")
@@ -19,12 +13,10 @@ class PlantCreate(BaseModel):
     )
     estimated_age_months: Optional[int] = Field(None, description="Edad estimada al momento de adopción")
     location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
-    mac_address: Optional[str] = Field(None, description="MAC Address del sensor vinculado")
 
 class PlantUpdate(BaseModel):
     nickname: Optional[str] = Field(None, description="Apodo de la planta")
     location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
-    mac_address: Optional[str] = Field(None, description="MAC Address del sensor vinculado")
 
 class PersonalizedCareRequest(BaseModel):
     city: str = Field(..., description="Ciudad o región para adaptar el clima")
@@ -49,18 +41,17 @@ class PlantResponse(BaseModel):
     last_watered: Optional[datetime] = None
     estimated_age_months: Optional[int] = None
     location: Optional[str] = None
-    mac_address: Optional[str] = None
     specific_care_tips: Optional[Any] = None
 
-class CareRangesDTO(BaseModel):
-    min_temp_c: int
-    max_temp_c: int
-    min_light_lux: int
-    max_light_lux: int
-    min_air_humidity_pct: int
-    max_air_humidity_pct: int
-    min_soil_humidity_pct: int
-    max_soil_humidity_pct: int
+class CareRangesDTO(BaseModel):  # Fix #2: float para respetar los FLOAT de la BD
+    min_temp_c: float
+    max_temp_c: float
+    min_light_lux: float
+    max_light_lux: float
+    min_air_humidity_pct: float
+    max_air_humidity_pct: float
+    min_soil_humidity_pct: float
+    max_soil_humidity_pct: float
 
 class SpeciesInfoDTO(BaseModel):
     care_summary: Optional[str] = None

@@ -129,8 +129,21 @@ def _get_avg_from_firebase(plant_id: str, field: str, since: datetime, to_date: 
         logger.error(f"Error fetching avg from firebase: {e}")
         return None
 
+
+def _get_user_language(user_id: str) -> str:
+    """Obtiene el idioma preferido del usuario desde Supabase. Devuelve 'es' como fallback."""
+    try:
+        res = supabase.table("users").select("preferred_language").eq("user_id", user_id).maybe_single().execute()
+        return (res.data or {}).get("preferred_language") or "es"
+    except Exception as e:
+        logger.warning(f"No se pudo obtener preferred_language del usuario {user_id}: {e}")
+        return "es"
+
 async def handle_alerts(plant_id: str, user_id: str, species_id: str, alerts: list[str]):
     alert_msg = "Problemas detectados: " + ", ".join(alerts)
+
+    # Fix #1: obtener idioma preferido del usuario en vez de hardcodear "es"
+    language = await asyncio.to_thread(_get_user_language, user_id)
 
     # Save event
     try:
@@ -148,7 +161,7 @@ async def handle_alerts(plant_id: str, user_id: str, species_id: str, alerts: li
                 plant_id=plant_id,
                 user_id=user_id,
                 message=user_message,
-                language="es",
+                language=language,
                 redis_client=redis_client,
                 is_proactive=True
             )

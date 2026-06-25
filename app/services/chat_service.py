@@ -56,6 +56,13 @@ def _verify_and_get_plant(plant_id: str, user_id: str) -> dict:
     return plant
 
 
+def _fetch_username_sync(user_id: str) -> str:
+    res = supabase.table("users").select("username").eq("user_id", user_id).maybe_single().execute()
+    if res and res.data and res.data.get("username"):
+        return res.data["username"]
+    return "dueño/a"
+
+
 def _load_latest_sensor_sync(plant_id: str) -> dict | None:
     """Carga la última lectura de sensores desde Firestore."""
     try:
@@ -75,7 +82,7 @@ def _load_latest_sensor_sync(plant_id: str) -> dict | None:
     return None
 
 
-def _format_plant_status(plant: dict, sensor: dict | None) -> str:
+def _format_plant_status(plant: dict, sensor: dict | None, username: str) -> str:
     """Construye el bloque de estado actual que se inyecta en el system prompt."""
     health_score = plant.get("health_score", "?")
     health_status = plant.get("health_status", "?")
@@ -83,7 +90,8 @@ def _format_plant_status(plant: dict, sensor: dict | None) -> str:
 
     lines = [
         "--- Tu estado actual ---",
-        f"Nombre: {nickname}",
+        f"Tu Nombre: {nickname}",
+        f"Nombre de la persona con la que hablas (tu dueño/a): {username}",
         f"Salud general: {health_status} ({health_score}/100)",
     ]
 
@@ -294,11 +302,12 @@ async def chat_with_plant(
     response_format: str = "text",
     is_proactive: bool = False,
 ) -> ChatResponse:
-    # 1. Verificar ownership + cargar caché en paralelo
+    # 1. Verificar ownership + cargar caché en paralelo + obtener username
     plant_task = asyncio.to_thread(_verify_and_get_plant, plant_id, user_id)
     cache_task = _load_cache(redis_client, user_id, plant_id)
+    username_task = asyncio.to_thread(_fetch_username_sync, user_id)
 
-    plant_row, (history, summary) = await asyncio.gather(plant_task, cache_task)
+    plant_row, (history, summary), username = await asyncio.gather(plant_task, cache_task, username_task)
     species_id = plant_row["species_id"]
 
     # 2. Cargar en paralelo: personalidad, sensor y (si hace falta) historial desde Firestore
@@ -321,13 +330,13 @@ async def chat_with_plant(
     history, summary, was_compacted = await compact_if_needed(history, summary)
 
     # 5. Construir mensajes para el LLM
-    plant_status = _format_plant_status(plant_row, sensor)
+    plant_status = _format_plant_status(plant_row, sensor, username)
     system_content = build_system_with_summary(personality, summary, plant_status)
     llm_messages = [{"role": "system", "content": system_content}]
     llm_messages.extend(history)
 
     if is_proactive:
-        llm_messages.append({"role": "system", "content": f"Instrucción urgente del sistema base: {message}"})
+        llm_messages.append({"role": "system", "content": f"Instrucción urgente del sistema base: {message}. Dirígete al usuario por su nombre ({username})."})
     else:
         llm_messages.append({"role": "user", "content": message})
 
