@@ -4,7 +4,7 @@ from typing import List, Optional
 import json
 import re
 from datetime import datetime, timezone
-from app.schemas.plants import PlantCreate, PlantResponse, PersonalizedCareRequest, PlantProfileResponse, PlantActionRequest
+from app.schemas.plants import PlantCreate, PlantResponse, PlantActionRequest, PersonalizedCareRequest, PlantProfileResponse, PlantUpdate
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -64,6 +64,36 @@ async def create_plant(
             status_code=500,
             detail=f"Error creando la planta: {str(e)}"
         )
+
+@router.patch("/{plant_id}", response_model=PlantResponse)
+async def update_plant(
+    plant_id: str,
+    update_data: PlantUpdate,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        plant_check = supabase.table('plants').select('plant_id').eq('plant_id', plant_id).eq('user_id', user_id).execute()
+        if not plant_check.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+            
+        updates = update_data.model_dump(exclude_unset=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar.")
+            
+        updated = supabase.table('plants').update(updates).eq('plant_id', plant_id).execute()
+        if not updated.data:
+            raise HTTPException(status_code=500, detail="Error al actualizar la planta.")
+            
+        fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        row = fetched.data[0]
+        _flatten_species(row)
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error actualizando la planta: {str(e)}")
 
 @router.post("/{plant_id}/actions", response_model=PlantResponse)
 async def perform_plant_action(

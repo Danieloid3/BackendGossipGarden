@@ -21,6 +21,11 @@ class PlantCreate(BaseModel):
     location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
     mac_address: Optional[str] = Field(None, description="MAC Address del sensor vinculado")
 
+class PlantUpdate(BaseModel):
+    nickname: Optional[str] = Field(None, description="Apodo de la planta")
+    location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
+    mac_address: Optional[str] = Field(None, description="MAC Address del sensor vinculado")
+
 class PersonalizedCareRequest(BaseModel):
     city: str = Field(..., description="Ciudad o región para adaptar el clima")
     language: Optional[str] = Field(None, description="Idioma deseado para los consejos (ej. 'es', 'en')")
