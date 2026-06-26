@@ -50,8 +50,8 @@ async def login(user_in: UserLogin):
         )
     except Exception as e:
         raise HTTPException(
-            status_code=400,
-            detail=f"Credenciales inválidas o error de inicio de sesión: {str(e)}"
+            status_code=401,
+            detail="Credenciales inválidas"
         )
 
 @router.get("/google-url")
