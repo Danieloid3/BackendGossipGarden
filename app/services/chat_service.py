@@ -375,7 +375,7 @@ async def chat_with_plant(
         model=model_to_use,
         messages=llm_messages,
         temperature=0.8,
-        max_tokens=500,
+        max_tokens=150,
     )
     reply = response.choices[0].message.content or "..."
 
