@@ -155,8 +155,9 @@ async def upload_audio(
         # Hacemos el blob público para evitar error 403
         await asyncio.to_thread(blob.make_public)
         
-        logger.debug("Audio subido y hecho público a Storage: %s (%d KB)", storage_path, len(audio_bytes) // 1024)
-        return storage_path
+        public_url = f"https://storage.googleapis.com/{bucket.name}/{storage_path}"
+        logger.debug("Audio subido y hecho público a Storage: %s (%d KB)", public_url, len(audio_bytes) // 1024)
+        return public_url
 
     except Exception as e:
         logger.error("Error subiendo audio a Firebase Storage (%s): %s", storage_path, e)
