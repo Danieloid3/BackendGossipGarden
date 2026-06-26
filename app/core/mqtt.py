@@ -27,20 +27,24 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
     try:
         data = json.loads(payload_str)
 
-        # Validar que obligatoriamente traiga el plant_id en el payload
-        plant_id = data.get("plant_id")
-
-        if not plant_id:
-            logger.warning(f"Se ignoró la lectura del sensor {sensor_id}: No se envió 'plant_id' en el JSON.")
+        # MODO BROADCAST (QA): Ignoramos el plant_id que envíe el ESP32
+        # y replicamos la lectura a TODAS las plantas en la base de datos.
+        try:
+            plants_response = supabase.table('plants').select('plant_id').execute()
+            if not plants_response.data:
+                logger.info("No hay plantas registradas. Se ignora la lectura del sensor.")
+                return
+            target_plant_ids = [p['plant_id'] for p in plants_response.data]
+        except Exception as e:
+            logger.error(f"Error consultando plantas para broadcast: {e}")
             return
 
         now = datetime.now(timezone.utc)
         expire_at = now + timedelta(days=30)
 
-        doc_data = {
+        base_doc_data = {
             "sensor_id": sensor_id,
             "mac_address": data.get("mac_address", ""),
-            "plant_id": str(plant_id),
             "temperature_c": data.get("temperature_c", 0.0),
             "humidity_pct": data.get("humidity_pct", 0.0),
             "soil_moisture_pct": data.get("soil_moisture_pct", 0.0),
@@ -49,19 +53,26 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
             "expireAt": expire_at
         }
 
-        score, status = await calculate_and_save_health(
-            str(plant_id),
-            doc_data["temperature_c"],
-            doc_data["light_lux"],
-            doc_data["humidity_pct"],
-            doc_data["soil_moisture_pct"]
-        )
-        doc_data["health_score"] = score
-        doc_data["health_status"] = status
+        for pid in target_plant_ids:
+            try:
+                score, status = await calculate_and_save_health(
+                    str(pid),
+                    base_doc_data["temperature_c"],
+                    base_doc_data["light_lux"],
+                    base_doc_data["humidity_pct"],
+                    base_doc_data["soil_moisture_pct"]
+                )
+                
+                doc_data = base_doc_data.copy()
+                doc_data["plant_id"] = str(pid)
+                doc_data["health_score"] = score
+                doc_data["health_status"] = status
 
-        # Guardar en Firebase dentro de la subcolección de la planta
-        firebase_db.collection("plants").document(str(plant_id)).collection("sensor_readings").add(doc_data)
-        logger.info(f"Guardada lectura MQTT del sensor {sensor_id} para la planta {plant_id}")
+                # Guardar en Firebase dentro de la subcolección de la planta
+                firebase_db.collection("plants").document(str(pid)).collection("sensor_readings").add(doc_data)
+                logger.info(f"Guardada lectura MQTT (Broadcast) del sensor {sensor_id} para la planta {pid}")
+            except Exception as e:
+                logger.error(f"Error en broadcast para la planta {pid}: {e}")
 
     except json.JSONDecodeError:
         logger.error(f"Error decodificando el JSON de MQTT payload: {payload_str}")

@@ -20,24 +20,37 @@ async def ingest_sensor_data(
         doc_data["timestamp"] = now
         doc_data["expireAt"] = expire_at
 
-        # Calculate health
-        score, status = await calculate_and_save_health(
-            str(data.plant_id),
-            data.temperature_c,
-            data.light_lux,
-            data.humidity_pct,
-            data.soil_moisture_pct
-        )
-        doc_data["health_score"] = score
-        doc_data["health_status"] = status
+        # MODO BROADCAST (QA)
+        from app.db.supabase import supabase
+        plants_response = supabase.table('plants').select('plant_id').execute()
+        if not plants_response.data:
+            return {"status": "ignored", "message": "No hay plantas registradas."}
+            
+        target_plant_ids = [p['plant_id'] for p in plants_response.data]
 
-        # Guardar en la subcolección de la planta específica para separar métricas individualmente
-        _, doc_ref = firebase_db.collection("plants").document(str(data.plant_id)).collection("sensor_readings").add(doc_data)
+        for pid in target_plant_ids:
+            try:
+                score, status = await calculate_and_save_health(
+                    str(pid),
+                    data.temperature_c,
+                    data.light_lux,
+                    data.humidity_pct,
+                    data.soil_moisture_pct
+                )
+                
+                doc_to_save = doc_data.copy()
+                doc_to_save["plant_id"] = str(pid)
+                doc_to_save["health_score"] = score
+                doc_to_save["health_status"] = status
+                
+                firebase_db.collection("plants").document(str(pid)).collection("sensor_readings").add(doc_to_save)
+            except Exception as e:
+                print(f"Error en broadcast rest para {pid}: {e}")
 
         return {
             "status": "success",
-            "message": "Datos ingeridos correctamente.",
-            "doc_id": doc_ref.id
+            "message": f"Datos distribuidos a {len(target_plant_ids)} plantas.",
+            "doc_id": "broadcast"
         }
 
     except Exception as e:
