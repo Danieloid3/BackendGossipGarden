@@ -151,7 +151,11 @@ async def upload_audio(
             io.BytesIO(audio_bytes),
             content_type=content_type,
         )
-        logger.debug("Audio subido a Storage: %s (%d KB)", storage_path, len(audio_bytes) // 1024)
+        
+        # Hacemos el blob público para evitar error 403
+        await asyncio.to_thread(blob.make_public)
+        
+        logger.debug("Audio subido y hecho público a Storage: %s (%d KB)", storage_path, len(audio_bytes) // 1024)
         return storage_path
 
     except Exception as e:
