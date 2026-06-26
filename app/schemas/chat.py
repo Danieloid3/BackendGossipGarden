@@ -9,6 +9,7 @@ class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     language: str = Field("es", pattern=r"^(es|en|fr|pt|de|it)$")
     response_format: Literal["text", "audio"] = "text"
+    image_base64: str | None = Field(None, description="Imagen en Base64 para analizar")
 
 
 class ChatMessage(BaseModel):

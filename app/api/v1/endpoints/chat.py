@@ -42,6 +42,7 @@ async def send_message(
             message=body.message,
             language=body.language,
             response_format=body.response_format,
+            image_base64=body.image_base64,
             redis_client=redis,
         )
     except ValueError as e:

@@ -300,6 +300,7 @@ async def chat_with_plant(
     language: str,
     redis_client,
     response_format: str = "text",
+    image_base64: str | None = None,
     is_proactive: bool = False,
 ) -> ChatResponse:
     # 1. Verificar ownership + cargar caché en paralelo + obtener username
@@ -332,13 +333,30 @@ async def chat_with_plant(
     # 5. Construir mensajes para el LLM
     plant_status = _format_plant_status(plant_row, sensor, username)
     system_content = build_system_with_summary(personality, summary, plant_status)
+    if image_base64:
+        system_content += "\n\nIMPORTANTE: El usuario acaba de enviarte una fotografía tuya (de la planta). Analízala detalladamente para evaluar tu estado de salud visual, detectar posibles signos de enfermedad, estrés, plagas o problemas de riego, y combina esta información visual con tus datos de sensores para darle un diagnóstico y recomendaciones."
     llm_messages = [{"role": "system", "content": system_content}]
     llm_messages.extend(history)
 
     if is_proactive:
         llm_messages.append({"role": "system", "content": f"Instrucción urgente del sistema base: {message}. Dirígete al usuario por su nombre ({username})."})
     else:
-        llm_messages.append({"role": "user", "content": message})
+        if image_base64:
+            llm_messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": message},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}",
+                            "detail": "auto"
+                        }
+                    }
+                ]
+            })
+        else:
+            llm_messages.append({"role": "user", "content": message})
 
     # 6. Llamar a GPT
     client = AsyncOpenAI(
@@ -346,8 +364,9 @@ async def chat_with_plant(
         timeout=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=0,
     )
+    model_to_use = settings.OPENAI_PERSONALITY_MODEL if image_base64 else settings.OPENAI_CHAT_MODEL
     response = await client.chat.completions.create(
-        model=settings.OPENAI_CHAT_MODEL,
+        model=model_to_use,
         messages=llm_messages,
         temperature=0.8,
         max_tokens=500,
