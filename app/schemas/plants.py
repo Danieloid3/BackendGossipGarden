@@ -17,6 +17,7 @@ class PlantCreate(BaseModel):
 class PlantUpdate(BaseModel):
     nickname: Optional[str] = Field(None, description="Apodo de la planta")
     location: Optional[str] = Field(None, description="Ubicación en casa (ej. Sala, Balcón)")
+    mac_address: Optional[str] = Field(None, description="MAC Address del hardware ESP32")
 
 class PersonalizedCareRequest(BaseModel):
     city: str = Field(..., description="Ciudad o región para adaptar el clima")
@@ -38,6 +39,7 @@ class PlantResponse(BaseModel):
     scientific_name: Optional[str] = None
     created_at: datetime
     last_health_check: Optional[datetime] = None
+    mac_address: Optional[str] = None
     last_watered: Optional[datetime] = None
     estimated_age_months: Optional[int] = None
     location: Optional[str] = None
