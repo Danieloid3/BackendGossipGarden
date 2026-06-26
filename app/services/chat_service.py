@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -216,6 +217,7 @@ def _save_exchange_sync(
     reply: str,
     now_ms: int,
     audio_url: str | None = None,
+    user_audio_url: str | None = None,
 ) -> None:
     doc_ref = (
         firebase_db.collection("plants")
@@ -230,7 +232,10 @@ def _save_exchange_sync(
 
     new_messages = []
     if user_message is not None:
-        new_messages.append({"role": "user", "content": user_message, "timestamp": now_str})
+        user_msg_dict = {"role": "user", "content": user_message, "timestamp": now_str}
+        if user_audio_url:
+            user_msg_dict["audio_url"] = user_audio_url
+        new_messages.append(user_msg_dict)
     new_messages.append(assistant_msg)
 
     doc_ref.set(
@@ -297,11 +302,12 @@ async def chat_with_plant(
     plant_id: str,
     user_id: str,
     message: str,
-    language: str,
-    redis_client,
+    is_proactive: bool = False,
+    language: str = "es",
     response_format: str = "text",
     image_base64: str | None = None,
-    is_proactive: bool = False,
+    user_audio_base64: str | None = None,
+    redis_client=None,
 ) -> ChatResponse:
     # 1. Verificar ownership + cargar caché en paralelo + obtener username
     plant_task = asyncio.to_thread(_verify_and_get_plant, plant_id, user_id)
@@ -373,9 +379,20 @@ async def chat_with_plant(
     )
     reply = response.choices[0].message.content or "..."
 
-    # 7. Persistir el intercambio
+    # 7. Persistir el intercambio y subir audios
     now_ms = int(time.time() * 1000)
     now_str = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    user_audio_url: str | None = None
+    if user_audio_base64:
+        try:
+            user_audio_bytes = base64.b64decode(user_audio_base64)
+            # Asumimos webm por defecto para la web, la app podría enviar m4a
+            user_audio_url = await tts_service.upload_audio(
+                user_audio_bytes, user_id, plant_id, now_str, extension="webm", content_type="audio/webm"
+            )
+        except Exception as e:
+            logger.error("Error al subir audio del usuario: %s", e)
 
     updated_history = history.copy()
     if not is_proactive:
@@ -396,7 +413,7 @@ async def chat_with_plant(
 
     try:
         await asyncio.to_thread(
-            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url
+            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url, user_audio_url
         )
     except Exception as e:
         logger.error("Error guardando en Firestore: %s", e)
@@ -427,7 +444,13 @@ async def chat_with_plant(
     except Exception as e:
         logger.error("notify falló (no rompe el chat): %s", e)
 
-    return ChatResponse(reply=reply, plant_id=plant_id, timestamp=now_str, audio_url=audio_url)
+    return ChatResponse(
+        reply=reply, 
+        plant_id=plant_id, 
+        timestamp=now_str, 
+        audio_url=audio_url,
+        user_audio_url=user_audio_url
+    )
 
 
 async def get_chat_history(
