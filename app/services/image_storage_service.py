@@ -149,7 +149,11 @@ async def _upload_compressed(image_bytes: bytes, storage_path: str) -> str | Non
             io.BytesIO(compressed),
             content_type="image/jpeg",
         )
-        logger.debug("Imagen subida a Storage: %s (%d KB)", storage_path, len(compressed) // 1024)
+        
+        # Hacemos el blob público para que el frontend pueda leerlo sin 403
+        await asyncio.to_thread(blob.make_public)
+        
+        logger.debug("Imagen subida y hecha pública a Storage: %s (%d KB)", storage_path, len(compressed) // 1024)
         return storage_path
 
     except Exception as e:

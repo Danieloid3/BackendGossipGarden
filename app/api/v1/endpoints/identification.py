@@ -11,6 +11,8 @@ from app.schemas.identification import (
     FromCandidateRequest,
     IdentifyResponse,
     PlantIdCandidate,
+    NeedsUserSelectionResponse,
+    NeedsMorePhotosResponse,
 )
 from app.services import identification_pipeline as pipeline
 from app.services.image_storage_service import compute_storage_path, store_identification_result
