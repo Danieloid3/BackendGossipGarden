@@ -55,6 +55,40 @@ async def create_plant(
             raise HTTPException(status_code=400, detail="No se pudo crear la planta.")
 
         plant_id = response.data[0]['plant_id']
+
+        # ---------------------------------------------------------------------
+        # QA BROADCAST MODO: Inicializar con la lectura global más reciente
+        # ---------------------------------------------------------------------
+        from app.services.health_service import calculate_and_save_health
+        import logging
+        try:
+            global_doc = firebase_db.collection("global_state").document("latest_sensor_reading").get()
+            if global_doc.exists:
+                base_data = global_doc.to_dict()
+                
+                # Calcular salud de esta especie particular con los datos globales
+                score, status = await calculate_and_save_health(
+                    plant_id,
+                    base_data.get("temperature_c", 0.0),
+                    base_data.get("light_lux", 0.0),
+                    base_data.get("humidity_pct", 0.0),
+                    base_data.get("soil_moisture_pct", 0.0)
+                )
+                
+                # Preparar lectura inicial heredada
+                doc_data = base_data.copy()
+                doc_data["plant_id"] = plant_id
+                doc_data["health_score"] = score
+                doc_data["health_status"] = status
+                # Respetamos la expiración original del dato, pero marcamos el timestamp actual
+                doc_data["timestamp"] = datetime.now(timezone.utc)
+                
+                firebase_db.collection("plants").document(plant_id).collection("sensor_readings").add(doc_data)
+                logging.info(f"Heredada lectura global para la planta recién creada {plant_id}")
+        except Exception as e:
+            logging.error(f"Error inicializando lectura global para {plant_id}: {e}")
+        # ---------------------------------------------------------------------
+
         fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
         row = fetched.data[0]
         _flatten_species(row)

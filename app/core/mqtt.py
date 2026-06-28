@@ -53,6 +53,13 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
             "expireAt": expire_at
         }
 
+        # 1. Guardar la lectura global para nuevas plantas
+        try:
+            firebase_db.collection("global_state").document("latest_sensor_reading").set(base_doc_data)
+            logger.info(f"Lectura global guardada en Firebase (Sensor: {sensor_id})")
+        except Exception as e:
+            logger.error(f"Error guardando lectura global: {e}")
+
         for pid in target_plant_ids:
             try:
                 score, status = await calculate_and_save_health(
