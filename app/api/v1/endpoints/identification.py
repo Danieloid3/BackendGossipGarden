@@ -58,7 +58,9 @@ async def identify(
     
     final_language = output_language
     try:
-        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        user_row = await asyncio.to_thread(
+            lambda: supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        )
         if user_row.data and user_row.data[0].get("preferred_language"):
             final_language = user_row.data[0]["preferred_language"]
     except Exception as e:
@@ -115,7 +117,9 @@ async def from_candidate(
     from app.db.supabase import supabase
     final_language = body.output_language
     try:
-        user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        user_row = await asyncio.to_thread(
+            lambda: supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        )
         if user_row.data and user_row.data[0].get("preferred_language"):
             final_language = user_row.data[0]["preferred_language"]
     except Exception as e:
@@ -138,7 +142,9 @@ async def search_species(
     from app.services.gbif_service import search_species_by_name
 
     query = f"%{q}%"
-    res = supabase.table("species").select("*").or_(f"scientific_name.ilike.{query},common_name.ilike.{query}").limit(10).execute()
+    res = await asyncio.to_thread(
+        lambda: supabase.table("species").select("*").or_(f"scientific_name.ilike.{query},common_name.ilike.{query}").limit(10).execute()
+    )
     
     candidates = []
     seen_scientific = set()

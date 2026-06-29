@@ -485,3 +485,16 @@ async def generate_personalized_care(
         
     return json.loads(choice.message.content)
 
+
+async def transcribe_audio(audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    """Transcribe audio usando OpenAI Whisper."""
+    client = _get_client()
+    
+    # OpenAI requiere un archivo o una tupla (filename, bytes)
+    file_tuple = (filename, audio_bytes)
+    
+    response = await client.audio.transcriptions.create(
+        model="whisper-1",
+        file=file_tuple,
+    )
+    return response.text

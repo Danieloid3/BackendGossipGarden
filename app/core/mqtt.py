@@ -60,26 +60,40 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
         except Exception as e:
             logger.error(f"Error guardando lectura global: {e}")
 
-        for pid in target_plant_ids:
-            try:
-                score, status = await calculate_and_save_health(
-                    str(pid),
-                    base_doc_data["temperature_c"],
-                    base_doc_data["light_lux"],
-                    base_doc_data["humidity_pct"],
-                    base_doc_data["soil_moisture_pct"]
-                )
-                
-                doc_data = base_doc_data.copy()
-                doc_data["plant_id"] = str(pid)
-                doc_data["health_score"] = score
-                doc_data["health_status"] = status
+        async def _process_broadcast():
+            batch = firebase_db.batch()
+            count = 0
+            for pid in target_plant_ids:
+                try:
+                    score, status = await calculate_and_save_health(
+                        str(pid),
+                        base_doc_data["temperature_c"],
+                        base_doc_data["light_lux"],
+                        base_doc_data["humidity_pct"],
+                        base_doc_data["soil_moisture_pct"]
+                    )
+                    
+                    doc_data = base_doc_data.copy()
+                    doc_data["plant_id"] = str(pid)
+                    doc_data["health_score"] = score
+                    doc_data["health_status"] = status
 
-                # Guardar en Firebase dentro de la subcolección de la planta
-                firebase_db.collection("plants").document(str(pid)).collection("sensor_readings").add(doc_data)
-                logger.info(f"Guardada lectura MQTT (Broadcast) del sensor {sensor_id} para la planta {pid}")
-            except Exception as e:
-                logger.error(f"Error en broadcast para la planta {pid}: {e}")
+                    # Guardar en Firebase dentro de la subcolección de la planta
+                    doc_ref = firebase_db.collection("plants").document(str(pid)).collection("sensor_readings").document()
+                    batch.set(doc_ref, doc_data)
+                    count += 1
+                    
+                    if count >= 400:
+                        await asyncio.to_thread(batch.commit)
+                        batch = firebase_db.batch()
+                        count = 0
+                except Exception as e:
+                    logger.error(f"Error en broadcast para la planta {pid}: {e}")
+            if count > 0:
+                await asyncio.to_thread(batch.commit)
+                logger.info(f"Guardada lectura MQTT (Broadcast) para múltiples plantas")
+
+        asyncio.create_task(_process_broadcast())
 
     except json.JSONDecodeError:
         logger.error(f"Error decodificando el JSON de MQTT payload: {payload_str}")

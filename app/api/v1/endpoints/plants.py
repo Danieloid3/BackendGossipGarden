@@ -39,7 +39,7 @@ async def create_plant(
             "species_id": str(plant.species_id),
             "nickname": plant.nickname,
             "health_status": "healthy",
-            "health_score": 100.0,
+            "health_score": None,
         }
         if plant.photo_storage_path:
             plant_data["photo_storage_path"] = plant.photo_storage_path
@@ -145,15 +145,14 @@ async def perform_plant_action(
         if not plant_check.data:
             raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
             
-        current_health = plant_check.data[0].get('health_score', 100.0)
-        if current_health is None:
-            current_health = 100.0
+        current_health = plant_check.data[0].get('health_score')
             
         updates = {}
         if action_req.action_type == "water":
             updates["last_watered"] = datetime.now(timezone.utc).isoformat()
-            new_health = min(100.0, current_health + 10.0)
-            updates["health_score"] = new_health
+            if current_health is not None:
+                new_health = min(100.0, current_health + 10.0)
+                updates["health_score"] = new_health
             updates["last_health_check"] = datetime.now(timezone.utc).isoformat()
         else:
             updates["last_health_check"] = datetime.now(timezone.utc).isoformat()

@@ -11,13 +11,31 @@ from app.schemas.chat import (
     ChatResponse,
     SetVoiceRequest,
     VoicesResponse,
+    TranscribeRequest,
+    TranscribeResponse,
 )
 from app.services import chat_service
+import base64
+from app.services import openai_service
 
 router = APIRouter()
 
 class TriggerProactiveRequest(BaseModel):
     alert_message: str
+
+@router.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe(
+    body: TranscribeRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Transcribe un audio usando Whisper."""
+    try:
+        audio_bytes = base64.b64decode(body.user_audio_base64)
+        transcription = await openai_service.transcribe_audio(audio_bytes)
+        return TranscribeResponse(transcription=transcription)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error transcribiendo: {str(e)}")
+
 
 def _verify_plant_access(plant_id: str, user_id: str) -> None:
     result = supabase.table("plants").select("user_id").eq("plant_id", plant_id).execute()
@@ -66,13 +84,16 @@ async def trigger_proactive_event(
         await asyncio.to_thread(_verify_plant_access, plant_id, user_id)
 
         # Simulamos que esto proviene del evaluator_service guardando también un evento
-        supabase.table("events").insert(
-            {
-                "plant_id": plant_id,
-                "type": "chat",
-                "message": body.alert_message,
-            }
-        ).execute()
+        def _insert():
+            supabase.table("events").insert(
+                {
+                    "plant_id": plant_id,
+                    "type": "chat",
+                    "message": body.alert_message,
+                }
+            ).execute()
+            
+        await asyncio.to_thread(_insert)
 
         user_message = (
             f"{body.alert_message}. Escribe un mensaje corto y natural al usuario (tu dueño) "

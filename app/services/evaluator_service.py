@@ -22,8 +22,10 @@ async def evaluator_loop():
         await asyncio.sleep(600)
 
 async def evaluate_all_plants():
-    # Fetch all plants
-    plants_res = supabase.table("plants").select("*").execute()
+    # Envolver DB sincrónica en to_thread
+    plants_res = await asyncio.to_thread(
+        lambda: supabase.table("plants").select("*").execute()
+    )
 
     plants = plants_res.data
     now = datetime.now(timezone.utc)
@@ -38,7 +40,9 @@ async def evaluate_all_plants():
         return
 
     # Fetch care profiles para todas las species involucradas
-    care_profiles_res = supabase.table("species_care_profiles").select("*").in_("species_id", species_ids).execute()
+    care_profiles_res = await asyncio.to_thread(
+        lambda: supabase.table("species_care_profiles").select("*").in_("species_id", species_ids).execute()
+    )
     care_profiles_dict = {cp['species_id']: cp for cp in care_profiles_res.data}
 
     for plant in plants:
@@ -98,7 +102,9 @@ async def evaluate_plant_parameters(plant: dict, care_profile: dict, now: dateti
                     triggered_alerts.append(f"{param_name} promedio ({avg_val:.2f}) fuera de rango ({min_val}-{max_val})")
 
     if updates:
-        supabase.table("plants").update(updates).eq("plant_id", plant_id).execute()
+        await asyncio.to_thread(
+            lambda: supabase.table("plants").update(updates).eq("plant_id", plant_id).execute()
+        )
 
     if triggered_alerts:
         await handle_alerts(plant_id, user_id, plant.get('species_id'), triggered_alerts)
@@ -132,9 +138,11 @@ def _get_avg_from_firebase(plant_id: str, field: str, since: datetime, to_date: 
 
 def _get_user_language(user_id: str) -> str:
     """Obtiene el idioma preferido del usuario desde Supabase. Devuelve 'es' como fallback."""
-    try:
+    def _fetch():
         res = supabase.table("users").select("preferred_language").eq("user_id", user_id).maybe_single().execute()
-        return (res.data or {}).get("preferred_language") or "es"
+        return res.data.get("preferred_language", "es") if res and res.data else "es"
+    try:
+        return _fetch()
     except Exception as e:
         logger.warning(f"No se pudo obtener preferred_language del usuario {user_id}: {e}")
         return "es"
@@ -147,11 +155,14 @@ async def handle_alerts(plant_id: str, user_id: str, species_id: str, alerts: li
 
     # Save event
     try:
-        supabase.table("events").insert({
-            "plant_id": plant_id,
-            "type": "chat",
-            "message": alert_msg
-        }).execute()
+        def _insert_event():
+            supabase.table("events").insert({
+                "plant_id": plant_id,
+                "type": "chat",
+                "message": alert_msg
+            }).execute()
+        
+        await asyncio.to_thread(_insert_event)
 
         user_message = f"{alert_msg}. Escribe un mensaje corto y natural al usuario (tu dueño) para avisarle de esto de forma urgente pero proactiva, actuando siempre bajo tu personalidad de planta, como si acabaras de notarlo."
 

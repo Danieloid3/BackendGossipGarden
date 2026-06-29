@@ -94,8 +94,9 @@ async def synthesize(
                 "text": text,
                 "model_id": settings.ELEVENLABS_MODEL_ID,
                 "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
+                    "stability": 0.35,
+                    "similarity_boost": 0.85,
+                    "style": 0.05,
                 },
             },
         )

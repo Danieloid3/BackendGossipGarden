@@ -10,13 +10,17 @@ import time
 from datetime import datetime, timezone
 
 from google.cloud.firestore import ArrayUnion, Query
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.db.firebase import firebase_db
 from app.db.supabase import supabase
+from app.services import openai_service
 from app.schemas.chat import ChatMessage, ChatHistoryResponse, ChatResponse, VoiceOption, VoicesResponse
 from app.services import tts_service
+from app.services import image_storage_service
+import base64
+import uuid
 from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
 from app.services.summarizer_service import (
     build_system_with_summary,
@@ -202,6 +206,9 @@ def _fetch_history_sync(plant_id: str, user_id: str, limit: int) -> list[dict]:
                 "role": m["role"],
                 "content": m["content"],
                 "timestamp": m.get("timestamp", ""),
+                "audio_url": m.get("audio_url"),
+                "user_audio_url": m.get("user_audio_url"),
+                "user_image_url": m.get("user_image_url"),
             }
             for m in messages
         ]
@@ -218,6 +225,7 @@ def _save_exchange_sync(
     now_ms: int,
     audio_url: str | None = None,
     user_audio_url: str | None = None,
+    user_image_url: str | None = None,
 ) -> None:
     doc_ref = (
         firebase_db.collection("plants")
@@ -235,6 +243,8 @@ def _save_exchange_sync(
         user_msg_dict = {"role": "user", "content": user_message, "timestamp": now_str}
         if user_audio_url:
             user_msg_dict["audio_url"] = user_audio_url
+        if user_image_url:
+            user_msg_dict["user_image_url"] = user_image_url
         new_messages.append(user_msg_dict)
     new_messages.append(assistant_msg)
 
@@ -368,16 +378,27 @@ async def chat_with_plant(
     client = AsyncOpenAI(
         api_key=settings.OPENAI_API_KEY,
         timeout=settings.OPENAI_TIMEOUT_SECONDS,
-        max_retries=0,
+        max_retries=2,
     )
     model_to_use = settings.OPENAI_PERSONALITY_MODEL if image_base64 else settings.OPENAI_CHAT_MODEL
-    response = await client.chat.completions.create(
-        model=model_to_use,
-        messages=llm_messages,
-        temperature=0.8,
-        max_tokens=150,
-    )
-    reply = response.choices[0].message.content or "..."
+    
+    extra_params = {}
+    if openai_service._model_supports_temperature(model_to_use):
+        extra_params["temperature"] = 0.8
+        extra_params["max_tokens"] = 150
+    else:
+        extra_params["max_completion_tokens"] = 150
+
+    try:
+        response = await client.chat.completions.create(
+            model=model_to_use,
+            messages=llm_messages,
+            **extra_params
+        )
+        reply = response.choices[0].message.content or "..."
+    except OpenAIError as e:
+        logger.error(f"OpenAIError in chat_with_plant: {e}")
+        reply = "Mmm... en este momento no me siento muy bien para hablar. ¡Intentemos más tarde!"
 
     # 7. Persistir el intercambio y subir audios
     now_ms = int(time.time() * 1000)
@@ -387,12 +408,24 @@ async def chat_with_plant(
     if user_audio_base64:
         try:
             user_audio_bytes = base64.b64decode(user_audio_base64)
-            # Asumimos webm por defecto para la web, la app podría enviar m4a
             user_audio_url = await tts_service.upload_audio(
                 user_audio_bytes, user_id, plant_id, now_str, extension="webm", content_type="audio/webm"
             )
         except Exception as e:
             logger.error("Error al subir audio del usuario: %s", e)
+
+    user_image_url: str | None = None
+    if image_base64:
+        try:
+            image_bytes = base64.b64decode(image_base64)
+            uid = str(uuid.uuid4())[:8]
+            safe_ts = now_str.replace(" ", "T").replace(":", "")
+            storage_path = f"chat_images/{user_id}/{plant_id}/{safe_ts}_{uid}.jpg"
+            stored_path = await image_storage_service._upload_compressed(image_bytes, storage_path)
+            if stored_path and settings.FIREBASE_STORAGE_BUCKET:
+                user_image_url = f"https://storage.googleapis.com/{settings.FIREBASE_STORAGE_BUCKET}/{stored_path}"
+        except Exception as e:
+            logger.error("Error al subir imagen del chat: %s", e)
 
     updated_history = history.copy()
     if not is_proactive:
@@ -413,7 +446,7 @@ async def chat_with_plant(
 
     try:
         await asyncio.to_thread(
-            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url, user_audio_url
+            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url, user_audio_url, user_image_url
         )
     except Exception as e:
         logger.error("Error guardando en Firestore: %s", e)
@@ -449,7 +482,9 @@ async def chat_with_plant(
         plant_id=plant_id, 
         timestamp=now_str, 
         audio_url=audio_url,
-        user_audio_url=user_audio_url
+        user_audio_url=user_audio_url,
+        user_image_url=user_image_url
+
     )
 
 

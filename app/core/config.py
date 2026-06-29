@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_BASE_URL: str = "https://api.elevenlabs.io/v1"
     ELEVENLABS_DEFAULT_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"
-    ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
+    ELEVENLABS_MODEL_ID: str = "eleven_turbo_v2_5"
     ELEVENLABS_TIMEOUT_SECONDS: float = 30.0
 
     RAG_ENABLED: bool = True

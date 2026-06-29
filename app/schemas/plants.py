@@ -32,7 +32,7 @@ class PlantResponse(BaseModel):
     species_id: UUID
     nickname: str
     health_status: str
-    health_score: float
+    health_score: Optional[float] = None
     photo_storage_path: Optional[str] = None
     photo_url: Optional[str] = None
     common_name: Optional[str] = None

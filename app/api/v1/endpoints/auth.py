@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from app.schemas.auth import UserLogin, UserRegister, TokenResponse
 from app.db.supabase import supabase
 from supabase import create_client
@@ -46,7 +47,8 @@ async def login(user_in: UserLogin):
 
         return TokenResponse(
             access_token=response.session.access_token,
-            token_type="Bearer"
+            token_type="Bearer",
+            refresh_token=response.session.refresh_token
         )
     except Exception as e:
         raise HTTPException(
@@ -78,3 +80,22 @@ async def get_google_auth_url(redirect_to: str = "http://localhost:3000/auth/cal
             status_code=500,
             detail=f"Error obteniendo la URL de Google Auth: {str(e)}"
         )
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(req: RefreshRequest):
+    try:
+        local_supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        response = local_supabase.auth.refresh_session(req.refresh_token)
+        if not response.session:
+            raise HTTPException(status_code=401, detail="No se pudo renovar la sesión")
+            
+        return TokenResponse(
+            access_token=response.session.access_token,
+            token_type="Bearer",
+            refresh_token=response.session.refresh_token
+        )
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Token expirado o inválido: {str(e)}")
