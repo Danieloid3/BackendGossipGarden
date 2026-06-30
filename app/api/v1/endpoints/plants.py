@@ -255,6 +255,26 @@ async def get_plants(
         response = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('user_id', user_to_query).execute()
 
         plants = response.data
+        
+        import concurrent.futures
+        def _fetch_latest_sensor(plant_id: str):
+            try:
+                docs = firebase_db.collection("plants").document(plant_id).collection("sensor_readings").order_by("timestamp", direction=Query.DESCENDING).limit(1).stream()
+                for doc in docs:
+                    d = doc.to_dict()
+                    d["id"] = doc.id
+                    d["plant_id"] = plant_id
+                    return d
+            except:
+                pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_plant = {executor.submit(_fetch_latest_sensor, str(p['plant_id'])): p for p in plants}
+            for future in concurrent.futures.as_completed(future_to_plant):
+                p = future_to_plant[future]
+                p['latest_sensor_data'] = future.result()
+
         for plant in plants:
             _flatten_species(plant)
             plant['photo_url'] = _photo_url(plant.get('photo_storage_path'))

@@ -26,6 +26,8 @@ class PersonalizedCareRequest(BaseModel):
 class PlantActionRequest(BaseModel):
     action_type: str = Field(..., description="Tipo de acción: water, fertilize, prune, etc.")
 
+from app.schemas.sensors import SensorDataResponse
+
 class PlantResponse(BaseModel):
     plant_id: UUID
     user_id: UUID
@@ -44,6 +46,7 @@ class PlantResponse(BaseModel):
     estimated_age_months: Optional[int] = None
     location: Optional[str] = None
     specific_care_tips: Optional[Any] = None
+    latest_sensor_data: Optional[SensorDataResponse] = None
 
 class CareRangesDTO(BaseModel):  # Fix #2: float para respetar los FLOAT de la BD
     min_temp_c: float

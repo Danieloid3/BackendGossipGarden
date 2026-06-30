@@ -387,7 +387,9 @@ async def chat_with_plant(
         extra_params["temperature"] = 0.8
         extra_params["max_tokens"] = 150
     else:
-        extra_params["max_completion_tokens"] = 150
+        # Los modelos de razonamiento (ej. gpt-5.5) consumen reasoning_tokens.
+        # Un límite de 150 provocaba que se quedaran sin tokens antes de generar la respuesta.
+        extra_params["max_completion_tokens"] = 2000
 
     try:
         response = await client.chat.completions.create(
