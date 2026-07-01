@@ -75,7 +75,7 @@ def test_summary_redis_key_format():
 
 
 def test_format_plant_status_with_sensor():
-    status = _format_plant_status(FAKE_PLANT_ROW, FAKE_SENSOR)
+    status = _format_plant_status(FAKE_PLANT_ROW, FAKE_SENSOR, "dueño/a")
     assert "Pepe" in status
     assert "22.5°C" in status
     assert "65.0%" in status
@@ -84,7 +84,7 @@ def test_format_plant_status_with_sensor():
 
 
 def test_format_plant_status_without_sensor():
-    status = _format_plant_status(FAKE_PLANT_ROW, None)
+    status = _format_plant_status(FAKE_PLANT_ROW, None, "dueño/a")
     assert "Sin datos de sensores disponibles" in status
     assert "Pepe" in status
     assert "healthy" in status
@@ -153,6 +153,7 @@ async def test_chat_with_plant_returns_response(fake_redis):
         patch("app.services.chat_service._get_personality", return_value=("Soy una planta.", None)),
         patch("app.services.chat_service._load_latest_sensor_sync", return_value=None),
         patch("app.services.chat_service._load_history_sync", return_value=[]),
+        patch("app.services.chat_service._fetch_username_sync", return_value="dueño/a"),
         patch("app.services.chat_service._load_summary_from_firestore_sync", return_value=""),
         patch("app.services.chat_service._save_exchange_sync"),
         patch(
@@ -230,6 +231,7 @@ async def test_chat_with_plant_redis_cache_hit_skips_firestore():
         patch("app.services.chat_service._verify_and_get_plant", return_value=FAKE_PLANT_ROW),
         patch("app.services.chat_service._get_personality", return_value=("Soy una planta.", None)),
         patch("app.services.chat_service._load_latest_sensor_sync", return_value=None),
+        patch("app.services.chat_service._fetch_username_sync", return_value="dueño/a"),
         patch("app.services.chat_service._load_history_sync") as mock_fs_history,
         patch("app.services.chat_service._load_summary_from_firestore_sync", return_value=""),
         patch("app.services.chat_service._save_exchange_sync"),
@@ -264,6 +266,7 @@ async def test_chat_with_plant_audio_format_calls_tts(fake_redis):
         patch("app.services.chat_service._verify_and_get_plant", return_value=plant_with_voice),
         patch("app.services.chat_service._get_personality", return_value=("Soy una planta.", VOICE_ID_A)),
         patch("app.services.chat_service._load_latest_sensor_sync", return_value=None),
+        patch("app.services.chat_service._fetch_username_sync", return_value="dueño/a"),
         patch("app.services.chat_service._load_history_sync", return_value=[]),
         patch("app.services.chat_service._load_summary_from_firestore_sync", return_value=""),
         patch("app.services.chat_service._save_exchange_sync"),

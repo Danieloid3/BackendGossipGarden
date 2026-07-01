@@ -22,6 +22,7 @@ from app.services import image_storage_service
 import base64
 import uuid
 from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
+from app.services.audio_utils import detect_audio_format
 from app.services.summarizer_service import (
     build_system_with_summary,
     compact_if_needed,
@@ -410,8 +411,9 @@ async def chat_with_plant(
     if user_audio_base64:
         try:
             user_audio_bytes = base64.b64decode(user_audio_base64)
+            ext, content_type = detect_audio_format(user_audio_bytes)
             user_audio_url = await tts_service.upload_audio(
-                user_audio_bytes, user_id, plant_id, now_str, extension="webm", content_type="audio/webm"
+                user_audio_bytes, user_id, plant_id, now_str, extension=ext, content_type=content_type
             )
         except Exception as e:
             logger.error("Error al subir audio del usuario: %s", e)

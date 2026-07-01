@@ -17,6 +17,7 @@ from app.schemas.chat import (
 from app.services import chat_service
 import base64
 from app.services import openai_service
+from app.services.audio_utils import detect_audio_format
 
 router = APIRouter()
 
@@ -31,7 +32,8 @@ async def transcribe(
     """Transcribe un audio usando Whisper."""
     try:
         audio_bytes = base64.b64decode(body.user_audio_base64)
-        transcription = await openai_service.transcribe_audio(audio_bytes)
+        ext, _ = detect_audio_format(audio_bytes)
+        transcription = await openai_service.transcribe_audio(audio_bytes, f"audio.{ext}")
         return TranscribeResponse(transcription=transcription)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error transcribiendo: {str(e)}")
