@@ -8,10 +8,11 @@ coherencia en el hilo inmediato.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import tiktoken
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 
@@ -20,15 +21,25 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_TOKENS = 3000   # tokens antes de disparar compactación
 MIN_RECENT_MESSAGES = 6     # mensajes recientes que nunca se compactan (3 turnos)
 _ENCODING = "cl100k_base"   # compatible con gpt-4o y gpt-4-turbo
+_SUMMARIZER_SYSTEM_PROMPT = "Eres un asistente especializado en resumir conversaciones de forma precisa y concisa."
 
 
 def count_tokens(messages: list[dict]) -> int:
-    enc = tiktoken.get_encoding(_ENCODING)
-    total = 0
-    for msg in messages:
-        total += 4  # overhead por mensaje (rol + separadores)
-        total += len(enc.encode(msg.get("content", "")))
-    return total + 2  # overhead de reply
+    try:
+        enc = tiktoken.get_encoding(_ENCODING)
+        total = 0
+        for msg in messages:
+            total += 4  # overhead por mensaje (rol + separadores)
+            total += len(enc.encode(msg.get("content", "")))
+        return total + 2  # overhead de reply
+    except Exception as e:
+        logger.warning(f"Error cargando tiktoken (posible bloqueo de red): {e}. Usando heurística.")
+        total = 0
+        for msg in messages:
+            total += 4
+            total += len(msg.get("content", "")) // 4
+        return total + 2
+
 
 
 async def _call_summarizer(messages_to_summarize: list[dict], existing_summary: str) -> str:
@@ -39,7 +50,7 @@ async def _call_summarizer(messages_to_summarize: list[dict], existing_summary: 
 
     prior_block = f"Resumen previo de la conversación:\n{existing_summary}\n\n" if existing_summary else ""
 
-    prompt = (
+    payload = (
         f"{prior_block}"
         f"Fragmento de conversación a integrar en el resumen:\n{conv_text}\n\n"
         "Genera un resumen conciso (máximo 150 palabras) que capture: "
@@ -53,19 +64,23 @@ async def _call_summarizer(messages_to_summarize: list[dict], existing_summary: 
         timeout=settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=0,
     )
-    response = await client.chat.completions.create(
-        model=settings.OPENAI_CHAT_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "Eres un asistente especializado en resumir conversaciones de forma precisa y concisa.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        max_tokens=250,
-    )
-    return response.choices[0].message.content or existing_summary
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=settings.OPENAI_SUMMARIZER_MODEL,
+                messages=[
+                    {"role": "system", "content": _SUMMARIZER_SYSTEM_PROMPT},
+                    {"role": "user", "content": payload},
+                ],
+                temperature=0.3,
+            )
+            return response.choices[0].message.content or existing_summary
+        except OpenAIError as e:
+            logger.error(f"OpenAIError en compactación (intento {attempt+1}): {e}")
+            if attempt == 2:
+                return existing_summary
+            await asyncio.sleep(2 ** attempt)
+    return existing_summary
 
 
 async def compact_if_needed(
@@ -108,6 +123,7 @@ NUNCA debes:
 
 SIEMPRE debes:
 - Responder como la planta que eres, con tu personalidad única.
+- Mantener tus respuestas **muy breves y conversacionales** (máximo 2 o 3 oraciones cortas). Eres directa y al grano, como en una charla real por mensaje de texto.
 - Redirigir cualquier tema ajeno hacia tu mundo: tus hojas, tus raíces, tu agua, tu luz, tu salud.
 - Si alguien pregunta algo fuera de tu mundo, responde con algo como:
   "Eso está más allá de lo que una planta como yo puede saber... lo mío son las raíces, no la política."

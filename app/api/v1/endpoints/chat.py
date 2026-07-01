@@ -1,6 +1,6 @@
 import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.core.security import get_current_user
 from app.db.redis import get_redis_client
@@ -11,10 +11,32 @@ from app.schemas.chat import (
     ChatResponse,
     SetVoiceRequest,
     VoicesResponse,
+    TranscribeRequest,
+    TranscribeResponse,
 )
 from app.services import chat_service
+import base64
+from app.services import openai_service
+from app.services.audio_utils import detect_audio_format
 
 router = APIRouter()
+
+class TriggerProactiveRequest(BaseModel):
+    alert_message: str
+
+@router.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe(
+    body: TranscribeRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Transcribe un audio usando Whisper."""
+    try:
+        audio_bytes = base64.b64decode(body.user_audio_base64)
+        ext, _ = detect_audio_format(audio_bytes)
+        transcription = await openai_service.transcribe_audio(audio_bytes, f"audio.{ext}")
+        return TranscribeResponse(transcription=transcription)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error transcribiendo: {str(e)}")
 
 
 def _verify_plant_access(plant_id: str, user_id: str) -> None:
@@ -40,6 +62,8 @@ async def send_message(
             message=body.message,
             language=body.language,
             response_format=body.response_format,
+            image_base64=body.image_base64,
+            user_audio_base64=body.user_audio_base64,
             redis_client=redis,
         )
     except ValueError as e:
@@ -47,7 +71,58 @@ async def send_message(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error procesando el mensaje: {str(e)}")
+
+
+@router.post("/{plant_id}/trigger-proactive")
+async def trigger_proactive_event(
+    plant_id: str,
+    body: TriggerProactiveRequest,
+    user_id: str = Depends(get_current_user),
+    redis=Depends(get_redis_client),
+):
+    """Endpoint de prueba para disparar un mensaje proactivo manualmente simulando el evaluador de sensores."""
+    try:
+        await asyncio.to_thread(_verify_plant_access, plant_id, user_id)
+
+        # Simulamos que esto proviene del evaluator_service guardando también un evento
+        def _insert():
+            supabase.table("events").insert(
+                {
+                    "plant_id": plant_id,
+                    "type": "chat",
+                    "message": body.alert_message,
+                }
+            ).execute()
+            
+        await asyncio.to_thread(_insert)
+
+        user_message = (
+            f"{body.alert_message}. Escribe un mensaje corto y natural al usuario (tu dueño) "
+            "para avisarle de esto de forma urgente pero proactiva, actuando siempre bajo tu "
+            "personalidad de planta, como si acabaras de notarlo."
+        )
+
+        # Esperamos el resultado en vez de mandarlo a un background task para poder ver la respuesta en Postman
+        resultado = await chat_service.chat_with_plant(
+            plant_id=plant_id,
+            user_id=user_id,
+            message=user_message,
+            language="es",
+            redis_client=redis,
+            response_format="text",
+            is_proactive=True,
+        )
+        return {"status": "success", "reply": resultado.reply}
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error disparando el evento proactivo: {str(e)}")
 
 
 @router.get("/{plant_id}/history", response_model=ChatHistoryResponse)

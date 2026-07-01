@@ -1,7 +1,10 @@
 import urllib.parse
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import List, Optional
-from app.schemas.plants import PlantCreate, PlantResponse
+import json
+import re
+from datetime import datetime, timezone
+from app.schemas.plants import PlantCreate, PlantResponse, PlantActionRequest, PersonalizedCareRequest, PlantProfileResponse, PlantUpdate
 from app.schemas.sensors import SensorDataResponse
 from app.core.security import get_current_user
 from app.core.config import settings
@@ -36,10 +39,14 @@ async def create_plant(
             "species_id": str(plant.species_id),
             "nickname": plant.nickname,
             "health_status": "healthy",
-            "health_score": 100.0,
+            "health_score": None,
         }
         if plant.photo_storage_path:
             plant_data["photo_storage_path"] = plant.photo_storage_path
+        if plant.estimated_age_months is not None:
+            plant_data["estimated_age_months"] = plant.estimated_age_months
+        if plant.location:
+            plant_data["location"] = plant.location
 
         # Insertar en Supabase
         response = supabase.table('plants').insert(plant_data).execute()
@@ -48,6 +55,40 @@ async def create_plant(
             raise HTTPException(status_code=400, detail="No se pudo crear la planta.")
 
         plant_id = response.data[0]['plant_id']
+
+        # ---------------------------------------------------------------------
+        # QA BROADCAST MODO: Inicializar con la lectura global más reciente
+        # ---------------------------------------------------------------------
+        from app.services.health_service import calculate_and_save_health
+        import logging
+        try:
+            global_doc = firebase_db.collection("global_state").document("latest_sensor_reading").get()
+            if global_doc.exists:
+                base_data = global_doc.to_dict()
+                
+                # Calcular salud de esta especie particular con los datos globales
+                score, status = await calculate_and_save_health(
+                    plant_id,
+                    base_data.get("temperature_c", 0.0),
+                    base_data.get("light_lux", 0.0),
+                    base_data.get("humidity_pct", 0.0),
+                    base_data.get("soil_moisture_pct", 0.0)
+                )
+                
+                # Preparar lectura inicial heredada
+                doc_data = base_data.copy()
+                doc_data["plant_id"] = plant_id
+                doc_data["health_score"] = score
+                doc_data["health_status"] = status
+                # Respetamos la expiración original del dato, pero marcamos el timestamp actual
+                doc_data["timestamp"] = datetime.now(timezone.utc)
+                
+                firebase_db.collection("plants").document(plant_id).collection("sensor_readings").add(doc_data)
+                logging.info(f"Heredada lectura global para la planta recién creada {plant_id}")
+        except Exception as e:
+            logging.error(f"Error inicializando lectura global para {plant_id}: {e}")
+        # ---------------------------------------------------------------------
+
         fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
         row = fetched.data[0]
         _flatten_species(row)
@@ -60,8 +101,142 @@ async def create_plant(
             detail=f"Error creando la planta: {str(e)}"
         )
 
+@router.patch("/{plant_id}", response_model=PlantResponse)
+async def update_plant(
+    plant_id: str,
+    update_data: PlantUpdate,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        plant_check = supabase.table('plants').select('plant_id').eq('plant_id', plant_id).eq('user_id', user_id).execute()
+        if not plant_check.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+            
+        updates = update_data.model_dump(exclude_unset=True)
+        # Fix #7: filtrar Nones explícitos — PATCH no debe nullificar campos involuntariamente
+        updates = {k: v for k, v in updates.items() if v is not None}
+        if not updates:
+            raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar.")
+            
+        updated = supabase.table('plants').update(updates).eq('plant_id', plant_id).execute()
+        if not updated.data:
+            raise HTTPException(status_code=500, detail="Error al actualizar la planta.")
+            
+        fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        row = fetched.data[0]
+        _flatten_species(row)
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error actualizando la planta: {str(e)}")
+
+@router.post("/{plant_id}/actions", response_model=PlantResponse)
+async def perform_plant_action(
+    plant_id: str,
+    action_req: PlantActionRequest,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        # Verificar que la planta pertenece al usuario
+        plant_check = supabase.table('plants').select('health_score').eq('plant_id', plant_id).eq('user_id', user_id).execute()
+        if not plant_check.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+            
+        current_health = plant_check.data[0].get('health_score')
+            
+        updates = {}
+        if action_req.action_type == "water":
+            updates["last_watered"] = datetime.now(timezone.utc).isoformat()
+            if current_health is not None:
+                new_health = min(100.0, current_health + 10.0)
+                updates["health_score"] = new_health
+            updates["last_health_check"] = datetime.now(timezone.utc).isoformat()
+        else:
+            updates["last_health_check"] = datetime.now(timezone.utc).isoformat()
+            
+        # Actualizar en Supabase
+        updated = supabase.table('plants').update(updates).eq('plant_id', plant_id).execute()
+        
+        if not updated.data:
+            raise HTTPException(status_code=500, detail="Error al registrar la acción.")
+            
+        fetched = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        row = fetched.data[0]
+        _flatten_species(row)
+        row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+        return row
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error registrando la acción: {str(e)}"
+        )
+
+@router.post("/{plant_id}/personalized-care", response_model=PlantResponse)
+async def generate_personalized_care_tips(
+    plant_id: str,
+    request: PersonalizedCareRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Genera y guarda consejos de cuidado hiper-personalizados para una planta basándose en su especie, ubicación y ciudad (clima)."""
+    # Verificar que la planta pertenece al usuario
+    plant_row = supabase.table("plants").select("*, species(scientific_name)").eq("plant_id", plant_id).eq("user_id", user_id).execute()
+    if not plant_row.data:
+        raise HTTPException(status_code=404, detail="Planta no encontrada o no tienes acceso.")
+    
+    plant = plant_row.data[0]
+    
+    # Resolver idioma
+    language = request.language
+    if not language:
+        language = "es"
+        from app.db.supabase import supabase
+        try:
+            user_row = supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+            if user_row.data and user_row.data[0].get("preferred_language"):
+                language = user_row.data[0]["preferred_language"]
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to fetch preferred_language in plants.py: {e}")
+    
+    # Validar que tengamos la información necesaria
+    if not plant.get("location"):
+        raise HTTPException(status_code=400, detail="La planta no tiene una ubicación configurada (ej. 'Sala'). Configúrala primero.")
+    
+    scientific_name = plant["species"]["scientific_name"]
+    
+    from app.services.openai_service import generate_personalized_care
+    
+    try:
+        tips = await generate_personalized_care(
+            species_name=scientific_name,
+            location=plant["location"],
+            city=request.city,
+            language=language,
+            estimated_age_months=plant.get("estimated_age_months")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando tips de cuidado: {str(e)}")
+        
+    # Guardar los tips en la base de datos
+    updated = supabase.table("plants").update({"specific_care_tips": tips}).eq("plant_id", plant_id).execute()
+    
+    if not updated.data:
+        raise HTTPException(status_code=500, detail="Error guardando los tips de cuidado en la planta.")
+        
+    fetched = supabase.table("plants").select("*, species(common_name, scientific_name)").eq("plant_id", plant_id).execute()
+    row = fetched.data[0]
+    _flatten_species(row)
+    row['photo_url'] = _photo_url(row.get('photo_storage_path'))
+    return row
+
 @router.get("/", response_model=List[PlantResponse])
-async def get_plants(
+def get_plants(
     target_user_id: Optional[str] = None,
     current_user_id: str = Depends(get_current_user)
 ):
@@ -80,6 +255,26 @@ async def get_plants(
         response = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('user_id', user_to_query).execute()
 
         plants = response.data
+        
+        import concurrent.futures
+        def _fetch_latest_sensor(plant_id: str):
+            try:
+                docs = firebase_db.collection("plants").document(plant_id).collection("sensor_readings").order_by("timestamp", direction=Query.DESCENDING).limit(1).stream()
+                for doc in docs:
+                    d = doc.to_dict()
+                    d["id"] = doc.id
+                    d["plant_id"] = plant_id
+                    return d
+            except:
+                pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_plant = {executor.submit(_fetch_latest_sensor, str(p['plant_id'])): p for p in plants}
+            for future in concurrent.futures.as_completed(future_to_plant):
+                p = future_to_plant[future]
+                p['latest_sensor_data'] = future.result()
+
         for plant in plants:
             _flatten_species(plant)
             plant['photo_url'] = _photo_url(plant.get('photo_storage_path'))
@@ -91,6 +286,113 @@ async def get_plants(
         raise HTTPException(
             status_code=500,
             detail=f"Error obteniendo las plantas: {str(e)}"
+        )
+
+@router.get("/{plant_id}/profile", response_model=PlantProfileResponse)
+async def get_plant_profile(
+    plant_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        import json
+        # Fetch the plant
+        plant_res = supabase.table('plants').select('*, species(common_name, scientific_name)').eq('plant_id', plant_id).execute()
+        if not plant_res.data:
+            raise HTTPException(status_code=404, detail="Planta no encontrada.")
+            
+        plant_row = plant_res.data[0]
+        plant_owner_id = plant_row['user_id']
+
+        if plant_owner_id != user_id:
+            user_low = min(user_id, plant_owner_id)
+            user_high = max(user_id, plant_owner_id)
+            friendship = supabase.table('friendships').select('status').eq('user_low_id', user_low).eq('user_high_id', user_high).eq('status', 'accepted').execute()
+            if not friendship.data:
+                raise HTTPException(status_code=403, detail="No tienes acceso al perfil de esta planta.")
+
+        _flatten_species(plant_row)
+        plant_row['photo_url'] = _photo_url(plant_row.get('photo_storage_path'))
+        species_id = plant_row['species_id']
+
+        # Fetch care ranges
+        care_ranges_res = supabase.table('species_care_profiles').select('*').eq('species_id', species_id).execute()
+        care_ranges_dto = None
+        if care_ranges_res.data:
+            cr = care_ranges_res.data[0]
+            care_ranges_dto = {
+                "min_temp_c": cr.get("min_temp_c", 0),
+                "max_temp_c": cr.get("max_temp_c", 0),
+                "min_light_lux": cr.get("min_light_lux", 0),
+                "max_light_lux": cr.get("max_light_lux", 0),
+                "min_air_humidity_pct": cr.get("min_air_humidity_pct", 0),
+                "max_air_humidity_pct": cr.get("max_air_humidity_pct", 0),
+                "min_soil_humidity_pct": cr.get("min_soil_humidity_pct", 0),
+                "max_soil_humidity_pct": cr.get("max_soil_humidity_pct", 0),
+            }
+
+        # Fetch AI content
+        ai_res = supabase.table('species_ai_content').select('*').eq('species_id', species_id).limit(1).execute()
+        ai_dto = {
+            "care_summary": None,
+            "ai_personality_prompt": None,
+            "care_tips": [],
+            "fun_facts": [],
+            "care_ranges": care_ranges_dto
+        }
+        if ai_res.data:
+            ai_data = ai_res.data[0]
+            ai_dto["care_summary"] = ai_data.get("care_summary")
+            ai_prompt = ai_data.get("ai_personality_prompt", "")
+            ai_dto["ai_personality_prompt"] = ai_prompt
+            
+            # Dynamic parsing for personality traits and description
+            desc = "Una planta con personalidad única."
+            traits = ["Única", "Misteriosa"]
+            if ai_prompt:
+                match = re.search(r"2\. TONO Y CARÁCTER\n(.*?)(?:\n3\.|\Z)", ai_prompt, re.DOTALL)
+                if match:
+                    desc_text = match.group(1).strip()
+                    sentences = desc_text.split('. ')
+                    desc = sentences[0] + ('.' if not sentences[0].endswith('.') else '')
+                    
+                    eres_match = re.search(r"[Ee]res\s+([a-záéíóúñ,\s]+)\.", desc_text)
+                    if eres_match:
+                        words = [w.strip() for w in eres_match.group(1).split(',')]
+                        words = [w for w in words if w and len(w) > 3]
+                        if words:
+                            traits = []
+                            for w in words:
+                                for sub in w.split(' y '):
+                                    clean = sub.replace('algo ', '').replace('muy ', '').strip().capitalize()
+                                    if clean and len(clean) > 3:
+                                        traits.append(clean)
+                            traits = traits[:3]
+
+            ai_dto["personality_description"] = desc
+            ai_dto["personality_traits"] = traits
+
+            def parse_json_list(val):
+                if not val:
+                    return []
+                if isinstance(val, list):
+                    return val
+                try:
+                    return json.loads(val)
+                except:
+                    return []
+                    
+            ai_dto["care_tips"] = parse_json_list(ai_data.get("care_tips"))
+            ai_dto["fun_facts"] = parse_json_list(ai_data.get("fun_facts"))
+
+        plant_row["species_info"] = ai_dto
+        return plant_row
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo el perfil de la planta: {str(e)}"
         )
 
 @router.get("/{plant_id}/sensor-data/latest", response_model=SensorDataResponse)
@@ -127,6 +429,7 @@ async def get_latest_sensor_data(
 
         doc_dict = latest_doc.to_dict()
         doc_dict["id"] = latest_doc.id
+        doc_dict["plant_id"] = plant_id
         return doc_dict
 
     except HTTPException:
@@ -171,6 +474,7 @@ async def get_sensor_data_history(
         for doc in docs:
             doc_dict = doc.to_dict()
             doc_dict["id"] = doc.id
+            doc_dict["plant_id"] = plant_id
             history.append(doc_dict)
 
         return history

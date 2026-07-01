@@ -122,6 +122,7 @@ class NeedsMorePhotosResponse(BaseModel):
 class NeedsUserSelectionResponse(BaseModel):
     status: Literal["needs_user_selection"] = "needs_user_selection"
     candidates: list[PlantIdCandidate]
+    photo_storage_path: str | None = None
 
 
 class CareProfileResponse(BaseModel):

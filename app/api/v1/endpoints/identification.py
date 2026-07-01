@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 
 from app.core.config import settings
@@ -10,6 +11,9 @@ from app.schemas.identification import (
     CompletedResponse,
     FromCandidateRequest,
     IdentifyResponse,
+    PlantIdCandidate,
+    NeedsUserSelectionResponse,
+    NeedsMorePhotosResponse,
 )
 from app.services import identification_pipeline as pipeline
 from app.services.image_storage_service import compute_storage_path, store_identification_result
@@ -48,24 +52,43 @@ async def identify(
     if len(image_bytes) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Imagen demasiado grande (máx 8 MB)")
 
-    if output_language not in {"es", "en", "fr", "pt", "de", "it"}:
-        raise HTTPException(status_code=422, detail=f"Idioma no soportado: {output_language}")
+    # Quitamos la validación estricta de idiomas aquí, o la aplicamos solo al input inicial.
+    # Pero el usuario dice que el backend ya lo debería traer. Así que si no viene, usamos "es".
+    
+    from app.db.supabase import supabase
+    
+    final_language = output_language
+    try:
+        user_row = await asyncio.to_thread(
+            lambda: supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        )
+        if user_row.data and user_row.data[0].get("preferred_language"):
+            final_language = user_row.data[0]["preferred_language"]
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to fetch preferred_language (column might not exist): {e}")
 
     result = await pipeline.identify_from_image(
         image_bytes,
         latitude=latitude,
         longitude=longitude,
-        output_language=output_language,
+        output_language=final_language,
     )
 
     # Generar el path antes del background task para incluirlo en la respuesta.
     # El app puede usarlo inmediatamente al crear la planta.
     photo_storage_path: str | None = None
-    if isinstance(result, CompletedResponse) and settings.FIREBASE_STORAGE_BUCKET:
-        photo_storage_path = compute_storage_path(
-            user_id, result.profile.scientific_name, content_type
-        )
-        result = result.model_copy(update={"photo_storage_path": photo_storage_path})
+    if settings.FIREBASE_STORAGE_BUCKET:
+        if isinstance(result, CompletedResponse):
+            photo_storage_path = compute_storage_path(
+                user_id, result.profile.scientific_name, content_type
+            )
+            result = result.model_copy(update={"photo_storage_path": photo_storage_path})
+        elif isinstance(result, NeedsUserSelectionResponse) and result.candidates:
+            photo_storage_path = compute_storage_path(
+                user_id, result.candidates[0].scientific_name, content_type
+            )
+            result = result.model_copy(update={"photo_storage_path": photo_storage_path})
 
     background_tasks.add_task(
         store_identification_result,
@@ -75,7 +98,7 @@ async def identify(
         storage_path=photo_storage_path,
         latitude=latitude,
         longitude=longitude,
-        output_language=output_language,
+        output_language=final_language,
     )
 
     return result
@@ -92,7 +115,71 @@ async def from_candidate(
     Es idempotente: si la especie ya existe con contenido en el idioma solicitado,
     devuelve la ficha cacheada sin llamar a APIs externas.
     """
+    from app.db.supabase import supabase
+    final_language = body.output_language
+    try:
+        user_row = await asyncio.to_thread(
+            lambda: supabase.table("users").select("preferred_language").eq("user_id", user_id).execute()
+        )
+        if user_row.data and user_row.data[0].get("preferred_language"):
+            final_language = user_row.data[0]["preferred_language"]
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to fetch preferred_language (column might not exist): {e}")
+
     return await pipeline.enrich_and_persist(
         body.candidate,
-        output_language=body.output_language,
+        output_language=final_language,
     )
+
+
+@router.get("/species/search", response_model=list[PlantIdCandidate])
+async def search_species(
+    q: str,
+    user_id: str = Depends(get_current_user),
+) -> list[PlantIdCandidate]:
+    """Busca especies por nombre común o científico en la BD local o vía GBIF."""
+    from app.db.supabase import supabase
+    from app.services.gbif_service import search_species_by_name
+
+    query = f"%{q}%"
+    res = await asyncio.to_thread(
+        lambda: supabase.table("species").select("*").or_(f"scientific_name.ilike.{query},common_name.ilike.{query}").limit(10).execute()
+    )
+    
+    candidates = []
+    seen_scientific = set()
+    
+    for row in res.data:
+        sci_name = row.get("scientific_name")
+        if sci_name and sci_name not in seen_scientific:
+            candidates.append(
+                PlantIdCandidate(
+                    scientific_name=sci_name,
+                    common_names=[row["common_name"]] if row.get("common_name") else [],
+                    probability=1.0,
+                    gbif_id=row.get("gbif_taxon_key"),
+                    inaturalist_id=row.get("inaturalist_id"),
+                )
+            )
+            seen_scientific.add(sci_name)
+
+    # Fallback a GBIF si hay pocos resultados
+    if len(candidates) < 3:
+        try:
+            gbif_taxonomy = await search_species_by_name(q)
+            if gbif_taxonomy and gbif_taxonomy.scientific_name not in seen_scientific:
+                candidates.append(
+                    PlantIdCandidate(
+                        scientific_name=gbif_taxonomy.scientific_name,
+                        common_names=[v["name"] for v in gbif_taxonomy.vernacular_names if v.get("name")],
+                        probability=1.0,
+                        gbif_id=gbif_taxonomy.key,
+                        taxonomy=gbif_taxonomy.model_dump(),
+                    )
+                )
+        except Exception as e:
+            import logging
+            logging.warning(f"GBIF search failed for '{q}': {e}")
+
+    return candidates

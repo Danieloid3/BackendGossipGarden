@@ -94,8 +94,9 @@ async def synthesize(
                 "text": text,
                 "model_id": settings.ELEVENLABS_MODEL_ID,
                 "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
+                    "stability": 0.35,
+                    "similarity_boost": 0.85,
+                    "style": 0.05,
                 },
             },
         )
@@ -124,8 +125,10 @@ async def upload_audio(
     user_id: str,
     plant_id: str,
     timestamp: str,
+    extension: str = "mp3",
+    content_type: str = "audio/mpeg",
 ) -> str | None:
-    """Sube el MP3 a Firebase Storage y retorna el storage path.
+    """Sube el audio a Firebase Storage y retorna el storage path.
 
     Retorna None si el bucket no está configurado o si la subida falla,
     sin lanzar excepción — igual que image_storage_service._upload_compressed.
@@ -136,7 +139,7 @@ async def upload_audio(
 
     uid = str(uuid.uuid4())[:8]
     safe_ts = timestamp.replace(" ", "T").replace(":", "")
-    storage_path = f"plant_audio/{user_id}/{plant_id}/{safe_ts}_{uid}.mp3"
+    storage_path = f"plant_audio/{user_id}/{plant_id}/{safe_ts}_{uid}.{extension}"
 
     try:
         from firebase_admin import storage as fb_storage
@@ -147,10 +150,15 @@ async def upload_audio(
         await asyncio.to_thread(
             blob.upload_from_file,
             io.BytesIO(audio_bytes),
-            content_type="audio/mpeg",
+            content_type=content_type,
         )
-        logger.debug("Audio subido a Storage: %s (%d KB)", storage_path, len(audio_bytes) // 1024)
-        return storage_path
+        
+        # Hacemos el blob público para evitar error 403
+        await asyncio.to_thread(blob.make_public)
+        
+        public_url = f"https://storage.googleapis.com/{bucket.name}/{storage_path}"
+        logger.debug("Audio subido y hecho público a Storage: %s (%d KB)", public_url, len(audio_bytes) // 1024)
+        return public_url
 
     except Exception as e:
         logger.error("Error subiendo audio a Firebase Storage (%s): %s", storage_path, e)

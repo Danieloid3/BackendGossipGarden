@@ -17,6 +17,7 @@ class SpeciesRecord(BaseModel):
     gbif_taxon_key: int | None = None
     inaturalist_id: int | None = None
     source_provider: str = "plant.id"
+    origin: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -165,3 +165,46 @@ async def test_generate_care_profile_includes_temperature_for_gpt4o(openai_profi
         call_kwargs = mock_client.chat.completions.create.call_args.kwargs
         assert "temperature" in call_kwargs
         assert call_kwargs["temperature"] == 0.4
+
+# ---------------------------------------------------------------------------
+# generate_personalized_care
+# ---------------------------------------------------------------------------
+
+async def test_generate_personalized_care_success():
+    from app.services.openai_service import generate_personalized_care
+    
+    mock_json = {
+        "watering": "Riega cada 3 días.",
+        "light": "Ponla cerca de la ventana.",
+        "substrate": "Tierra normal.",
+        "humidity": "Rocía agua a diario.",
+        "general_tip": "Háblale bonito."
+    }
+    
+    with patch("app.services.openai_service._get_client") as mock_client_factory:
+        mock_client = AsyncMock()
+        mock_client_factory.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_completion(json.dumps(mock_json))
+        )
+
+        result = await generate_personalized_care(
+            species_name="Monstera", location="Sala", city="Bogotá", language="en", estimated_age_months=12
+        )
+
+        assert result["watering"] == "Riega cada 3 días."
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "Idioma de respuesta: en" in call_kwargs["messages"][1]["content"]
+        assert "Edad estimada: 12" in call_kwargs["messages"][1]["content"]
+
+async def test_generate_personalized_care_refusal():
+    from app.services.openai_service import generate_personalized_care
+    with patch("app.services.openai_service._get_client") as mock_client_factory:
+        mock_client = AsyncMock()
+        mock_client_factory.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_completion("", refusal="No te ayudo")
+        )
+
+        with pytest.raises(OpenAISchemaViolationError, match="No te ayudo"):
+            await generate_personalized_care("Monstera", "Sala", "Bogotá")

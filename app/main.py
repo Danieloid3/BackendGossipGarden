@@ -1,8 +1,9 @@
 import logging
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Importar dependencias para asegurar validaciones en app startup
 from app.db.redis import redis_client
@@ -10,14 +11,11 @@ from app.db.supabase import supabase
 from app.db.firebase import firebase_db
 from app.api.v1.api import api_router
 from app.core.mqtt import start_mqtt_client, stop_mqtt_client
+from app.services.evaluator_service import start_evaluator, stop_evaluator
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger("gossip_garden")
-logger.setLevel(logging.INFO)
+from app.core.logging_config import setup_logging
+
+logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +49,10 @@ async def lifespan(app: FastAPI):
     start_mqtt_client()
     logger.info("Cliente MQTT de fondo iniciado.")
 
+    # 5. Iniciar loop del evaluador
+    start_evaluator()
+    logger.info("Loop del evaluador de sensores iniciado.")
+
     yield  # La aplicacin se ejecuta aqu
 
     # Lgica de shutdown
@@ -65,6 +67,9 @@ async def lifespan(app: FastAPI):
     stop_mqtt_client()
     logger.info("Cliente MQTT cancelado.")
 
+    stop_evaluator()
+    logger.info("Loop del evaluador cancelado.")
+
 # Inicializar FastAPI con el lifespan context manager
 app = FastAPI(title="Gossip Garden API", version="1.0.0", lifespan=lifespan)
 
@@ -72,10 +77,18 @@ app = FastAPI(title="Gossip Garden API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Registrar el router de la v1
 app.include_router(api_router, prefix="/api/v1")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception on {request.method} {request.url}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please check logs for details."}
+    )

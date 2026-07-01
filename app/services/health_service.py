@@ -1,4 +1,5 @@
 import math
+import asyncio
 from datetime import datetime, timezone
 from app.db.supabase import supabase
 import logging
@@ -31,14 +32,18 @@ async def calculate_and_save_health(plant_id: str, temperature: float, light: fl
     """
     try:
         # 1. Fetch species_id for the plant
-        plant_res = supabase.table("plants").select("species_id").eq("plant_id", plant_id).maybe_single().execute()
+        plant_res = await asyncio.to_thread(
+            lambda: supabase.table("plants").select("species_id").eq("plant_id", plant_id).maybe_single().execute()
+        )
         if not plant_res or not plant_res.data:
             return 100.0, "healthy"
 
         species_id = plant_res.data["species_id"]
 
         # 2. Fetch species_care_profiles
-        care_res = supabase.table("species_care_profiles").select("*").eq("species_id", species_id).maybe_single().execute()
+        care_res = await asyncio.to_thread(
+            lambda: supabase.table("species_care_profiles").select("*").eq("species_id", species_id).maybe_single().execute()
+        )
 
         if not care_res or not care_res.data:
             return 100.0, "healthy"
@@ -72,11 +77,13 @@ async def calculate_and_save_health(plant_id: str, temperature: float, light: fl
             status = "critical"
 
         # 5. Save to supabase plants table
-        supabase.table("plants").update({
-            "health_score": round(health_score, 2),
-            "health_status": status,
-            "last_health_check": datetime.now(timezone.utc).isoformat()
-        }).eq("plant_id", plant_id).execute()
+        await asyncio.to_thread(
+            lambda: supabase.table("plants").update({
+                "health_score": round(health_score, 2),
+                "health_status": status,
+                "sensor_status": "online"
+            }).eq("plant_id", plant_id).execute()
+        )
 
         return round(health_score, 2), status
 

@@ -35,14 +35,15 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_CHAT_MODEL: str = "gpt-4o"
     OPENAI_PERSONALITY_MODEL: str = "gpt-5.5"
-    OPENAI_TIMEOUT_SECONDS: float = 60.0
+    OPENAI_ECONOMIC_MODEL: str = "gpt-4o-mini"
+    OPENAI_TIMEOUT_SECONDS: float = 120.0
     OPENAI_MAX_RETRIES: int = 2
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_BASE_URL: str = "https://api.elevenlabs.io/v1"
     ELEVENLABS_DEFAULT_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"
-    ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
+    ELEVENLABS_MODEL_ID: str = "eleven_turbo_v2_5"
     ELEVENLABS_TIMEOUT_SECONDS: float = 30.0
 
     RAG_ENABLED: bool = True

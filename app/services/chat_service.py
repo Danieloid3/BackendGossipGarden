@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
 from datetime import datetime, timezone
 
 from google.cloud.firestore import ArrayUnion, Query
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.db.firebase import firebase_db
 from app.db.supabase import supabase
+from app.services import openai_service
 from app.schemas.chat import ChatMessage, ChatHistoryResponse, ChatResponse, VoiceOption, VoicesResponse
 from app.services import tts_service
+from app.services import image_storage_service
+import base64
+import uuid
 from app.services.tts_service import AVAILABLE_VOICES, VOICE_IDS
+from app.services.audio_utils import detect_audio_format
 from app.services.summarizer_service import (
     build_system_with_summary,
     compact_if_needed,
@@ -56,6 +62,13 @@ def _verify_and_get_plant(plant_id: str, user_id: str) -> dict:
     return plant
 
 
+def _fetch_username_sync(user_id: str) -> str:
+    res = supabase.table("users").select("username").eq("user_id", user_id).maybe_single().execute()
+    if res and res.data and res.data.get("username"):
+        return res.data["username"]
+    return "dueño/a"
+
+
 def _load_latest_sensor_sync(plant_id: str) -> dict | None:
     """Carga la última lectura de sensores desde Firestore."""
     try:
@@ -75,7 +88,7 @@ def _load_latest_sensor_sync(plant_id: str) -> dict | None:
     return None
 
 
-def _format_plant_status(plant: dict, sensor: dict | None) -> str:
+def _format_plant_status(plant: dict, sensor: dict | None, username: str) -> str:
     """Construye el bloque de estado actual que se inyecta en el system prompt."""
     health_score = plant.get("health_score", "?")
     health_status = plant.get("health_status", "?")
@@ -83,7 +96,8 @@ def _format_plant_status(plant: dict, sensor: dict | None) -> str:
 
     lines = [
         "--- Tu estado actual ---",
-        f"Nombre: {nickname}",
+        f"Tu Nombre: {nickname}",
+        f"Nombre de la persona con la que hablas (tu dueño/a): {username}",
         f"Salud general: {health_status} ({health_score}/100)",
     ]
 
@@ -193,6 +207,9 @@ def _fetch_history_sync(plant_id: str, user_id: str, limit: int) -> list[dict]:
                 "role": m["role"],
                 "content": m["content"],
                 "timestamp": m.get("timestamp", ""),
+                "audio_url": m.get("audio_url"),
+                "user_audio_url": m.get("user_audio_url"),
+                "user_image_url": m.get("user_image_url"),
             }
             for m in messages
         ]
@@ -204,10 +221,12 @@ def _fetch_history_sync(plant_id: str, user_id: str, limit: int) -> list[dict]:
 def _save_exchange_sync(
     plant_id: str,
     user_id: str,
-    user_message: str,
+    user_message: str | None,
     reply: str,
     now_ms: int,
     audio_url: str | None = None,
+    user_audio_url: str | None = None,
+    user_image_url: str | None = None,
 ) -> None:
     doc_ref = (
         firebase_db.collection("plants")
@@ -219,15 +238,23 @@ def _save_exchange_sync(
     assistant_msg: dict = {"role": "assistant", "content": reply, "timestamp": now_str}
     if audio_url:
         assistant_msg["audio_url"] = audio_url
+
+    new_messages = []
+    if user_message is not None:
+        user_msg_dict = {"role": "user", "content": user_message, "timestamp": now_str}
+        if user_audio_url:
+            user_msg_dict["audio_url"] = user_audio_url
+        if user_image_url:
+            user_msg_dict["user_image_url"] = user_image_url
+        new_messages.append(user_msg_dict)
+    new_messages.append(assistant_msg)
+
     doc_ref.set(
         {
             "user_id": user_id,
             "plant_id": plant_id,
             "updated_at": now_str,
-            "messages": ArrayUnion([
-                {"role": "user", "content": user_message, "timestamp": now_str},
-                assistant_msg,
-            ]),
+            "messages": ArrayUnion(new_messages),
         },
         merge=True,
     )
@@ -286,15 +313,19 @@ async def chat_with_plant(
     plant_id: str,
     user_id: str,
     message: str,
-    language: str,
-    redis_client,
+    is_proactive: bool = False,
+    language: str = "es",
     response_format: str = "text",
+    image_base64: str | None = None,
+    user_audio_base64: str | None = None,
+    redis_client=None,
 ) -> ChatResponse:
-    # 1. Verificar ownership + cargar caché en paralelo
+    # 1. Verificar ownership + cargar caché en paralelo + obtener username
     plant_task = asyncio.to_thread(_verify_and_get_plant, plant_id, user_id)
     cache_task = _load_cache(redis_client, user_id, plant_id)
+    username_task = asyncio.to_thread(_fetch_username_sync, user_id)
 
-    plant_row, (history, summary) = await asyncio.gather(plant_task, cache_task)
+    plant_row, (history, summary), username = await asyncio.gather(plant_task, cache_task, username_task)
     species_id = plant_row["species_id"]
 
     # 2. Cargar en paralelo: personalidad, sensor y (si hace falta) historial desde Firestore
@@ -317,34 +348,94 @@ async def chat_with_plant(
     history, summary, was_compacted = await compact_if_needed(history, summary)
 
     # 5. Construir mensajes para el LLM
-    plant_status = _format_plant_status(plant_row, sensor)
+    plant_status = _format_plant_status(plant_row, sensor, username)
     system_content = build_system_with_summary(personality, summary, plant_status)
+    if image_base64:
+        system_content += "\n\nIMPORTANTE: El usuario acaba de enviarte una fotografía tuya (de la planta). Analízala detalladamente para evaluar tu estado de salud visual, detectar posibles signos de enfermedad, estrés, plagas o problemas de riego, y combina esta información visual con tus datos de sensores para darle un diagnóstico y recomendaciones."
     llm_messages = [{"role": "system", "content": system_content}]
     llm_messages.extend(history)
-    llm_messages.append({"role": "user", "content": message})
+
+    if is_proactive:
+        llm_messages.append({"role": "system", "content": f"Instrucción urgente del sistema base: {message}. Dirígete al usuario por su nombre ({username})."})
+    else:
+        if image_base64:
+            llm_messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": message},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}",
+                            "detail": "auto"
+                        }
+                    }
+                ]
+            })
+        else:
+            llm_messages.append({"role": "user", "content": message})
 
     # 6. Llamar a GPT
     client = AsyncOpenAI(
         api_key=settings.OPENAI_API_KEY,
         timeout=settings.OPENAI_TIMEOUT_SECONDS,
-        max_retries=0,
+        max_retries=2,
     )
-    response = await client.chat.completions.create(
-        model=settings.OPENAI_CHAT_MODEL,
-        messages=llm_messages,
-        temperature=0.8,
-        max_tokens=500,
-    )
-    reply = response.choices[0].message.content or "..."
+    model_to_use = settings.OPENAI_PERSONALITY_MODEL if image_base64 else settings.OPENAI_CHAT_MODEL
+    
+    extra_params = {}
+    if openai_service._model_supports_temperature(model_to_use):
+        extra_params["temperature"] = 0.8
+        extra_params["max_tokens"] = 150
+    else:
+        # Los modelos de razonamiento (ej. gpt-5.5) consumen reasoning_tokens.
+        # Un límite de 150 provocaba que se quedaran sin tokens antes de generar la respuesta.
+        extra_params["max_completion_tokens"] = 2000
 
-    # 7. Persistir el intercambio
+    try:
+        response = await client.chat.completions.create(
+            model=model_to_use,
+            messages=llm_messages,
+            **extra_params
+        )
+        reply = response.choices[0].message.content or "..."
+    except OpenAIError as e:
+        logger.error(f"OpenAIError in chat_with_plant: {e}")
+        reply = "Mmm... en este momento no me siento muy bien para hablar. ¡Intentemos más tarde!"
+
+    # 7. Persistir el intercambio y subir audios
     now_ms = int(time.time() * 1000)
     now_str = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-    updated_history = (history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": reply},
-    ])[-(_HISTORY_MAX_TURNS * 2):]
+    user_audio_url: str | None = None
+    if user_audio_base64:
+        try:
+            user_audio_bytes = base64.b64decode(user_audio_base64)
+            ext, content_type = detect_audio_format(user_audio_bytes)
+            user_audio_url = await tts_service.upload_audio(
+                user_audio_bytes, user_id, plant_id, now_str, extension=ext, content_type=content_type
+            )
+        except Exception as e:
+            logger.error("Error al subir audio del usuario: %s", e)
+
+    user_image_url: str | None = None
+    if image_base64:
+        try:
+            image_bytes = base64.b64decode(image_base64)
+            uid = str(uuid.uuid4())[:8]
+            safe_ts = now_str.replace(" ", "T").replace(":", "")
+            storage_path = f"chat_images/{user_id}/{plant_id}/{safe_ts}_{uid}.jpg"
+            stored_path = await image_storage_service._upload_compressed(image_bytes, storage_path)
+            if stored_path and settings.FIREBASE_STORAGE_BUCKET:
+                user_image_url = f"https://storage.googleapis.com/{settings.FIREBASE_STORAGE_BUCKET}/{stored_path}"
+        except Exception as e:
+            logger.error("Error al subir imagen del chat: %s", e)
+
+    updated_history = history.copy()
+    if not is_proactive:
+        updated_history.append({"role": "user", "content": message})
+    updated_history.append({"role": "assistant", "content": reply})
+    updated_history = updated_history[-(_HISTORY_MAX_TURNS * 2):]
 
     # 8. Generar audio si el cliente lo solicitó
     # La voz del usuario (plants) tiene prioridad sobre la recomendada de la especie
@@ -359,7 +450,7 @@ async def chat_with_plant(
 
     try:
         await asyncio.to_thread(
-            _save_exchange_sync, plant_id, user_id, message, reply, now_ms, audio_url
+            _save_exchange_sync, plant_id, user_id, message if not is_proactive else None, reply, now_ms, audio_url, user_audio_url, user_image_url
         )
     except Exception as e:
         logger.error("Error guardando en Firestore: %s", e)
@@ -375,7 +466,30 @@ async def chat_with_plant(
 
     await _save_cache(redis_client, user_id, plant_id, updated_history, summary, was_compacted)
 
-    return ChatResponse(reply=reply, plant_id=plant_id, timestamp=now_str, audio_url=audio_url)
+    # Push notificación al cliente. Para chat normal solo WS; para proactivo también FCM.
+    try:
+        from app.services import notification_service
+        await notification_service.notify(
+            user_id=user_id,
+            plant_id=plant_id,
+            plant_nickname=plant_row.get("nickname", "Tu planta"),
+            message=reply,
+            notification_type="proactive_alert" if is_proactive else "chat_message",
+            audio_url=audio_url,
+            send_fcm=is_proactive,
+        )
+    except Exception as e:
+        logger.error("notify falló (no rompe el chat): %s", e)
+
+    return ChatResponse(
+        reply=reply, 
+        plant_id=plant_id, 
+        timestamp=now_str, 
+        audio_url=audio_url,
+        user_audio_url=user_audio_url,
+        user_image_url=user_image_url
+
+    )
 
 
 async def get_chat_history(

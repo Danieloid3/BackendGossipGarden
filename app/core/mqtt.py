@@ -27,17 +27,22 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
     try:
         data = json.loads(payload_str)
 
-        # Validar que obligatoriamente traiga el plant_id en el payload
-        plant_id = data.get("plant_id")
-
-        if not plant_id:
-            logger.warning(f"Se ignoró la lectura del sensor {sensor_id}: No se envió 'plant_id' en el JSON.")
+        # MODO BROADCAST (QA): Ignoramos el plant_id que envíe el ESP32
+        # y replicamos la lectura a TODAS las plantas en la base de datos.
+        try:
+            plants_response = supabase.table('plants').select('plant_id').execute()
+            if not plants_response.data:
+                logger.info("No hay plantas registradas. Se ignora la lectura del sensor.")
+                return
+            target_plant_ids = [p['plant_id'] for p in plants_response.data]
+        except Exception as e:
+            logger.error(f"Error consultando plantas para broadcast: {e}")
             return
 
         now = datetime.now(timezone.utc)
         expire_at = now + timedelta(days=30)
 
-        doc_data = {
+        base_doc_data = {
             "sensor_id": sensor_id,
             "mac_address": data.get("mac_address", ""),
             "temperature_c": data.get("temperature_c", 0.0),
@@ -48,19 +53,47 @@ async def handle_sensor_message(sensor_id: str, payload_str: str):
             "expireAt": expire_at
         }
 
-        score, status = await calculate_and_save_health(
-            str(plant_id),
-            doc_data["temperature_c"],
-            doc_data["light_lux"],
-            doc_data["humidity_pct"],
-            doc_data["soil_moisture_pct"]
-        )
-        doc_data["health_score"] = score
-        doc_data["health_status"] = status
+        # 1. Guardar la lectura global para nuevas plantas
+        try:
+            firebase_db.collection("global_state").document("latest_sensor_reading").set(base_doc_data)
+            logger.info(f"Lectura global guardada en Firebase (Sensor: {sensor_id})")
+        except Exception as e:
+            logger.error(f"Error guardando lectura global: {e}")
 
-        # Guardar en Firebase dentro de la subcolección de la planta
-        firebase_db.collection("plants").document(str(plant_id)).collection("sensor_readings").add(doc_data)
-        logger.info(f"Guardada lectura MQTT del sensor {sensor_id} para la planta {plant_id}")
+        async def _process_broadcast():
+            batch = firebase_db.batch()
+            count = 0
+            for pid in target_plant_ids:
+                try:
+                    score, status = await calculate_and_save_health(
+                        str(pid),
+                        base_doc_data["temperature_c"],
+                        base_doc_data["light_lux"],
+                        base_doc_data["humidity_pct"],
+                        base_doc_data["soil_moisture_pct"]
+                    )
+                    
+                    doc_data = base_doc_data.copy()
+                    doc_data["plant_id"] = str(pid)
+                    doc_data["health_score"] = score
+                    doc_data["health_status"] = status
+
+                    # Guardar en Firebase dentro de la subcolección de la planta
+                    doc_ref = firebase_db.collection("plants").document(str(pid)).collection("sensor_readings").document()
+                    batch.set(doc_ref, doc_data)
+                    count += 1
+                    
+                    if count >= 400:
+                        await asyncio.to_thread(batch.commit)
+                        batch = firebase_db.batch()
+                        count = 0
+                except Exception as e:
+                    logger.error(f"Error en broadcast para la planta {pid}: {e}")
+            if count > 0:
+                await asyncio.to_thread(batch.commit)
+                logger.info(f"Guardada lectura MQTT (Broadcast) para múltiples plantas")
+
+        asyncio.create_task(_process_broadcast())
 
     except json.JSONDecodeError:
         logger.error(f"Error decodificando el JSON de MQTT payload: {payload_str}")

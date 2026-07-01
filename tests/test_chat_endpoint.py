@@ -317,3 +317,14 @@ async def test_set_voice_invalid_id_returns_404(chat_client):
         )
 
     assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_send_message_payload_too_large_returns_422(chat_client):
+    payload = {
+        "message": "Hola",
+        "language": "es",
+        "response_format": "text",
+        "image_base64": "A" * 20000001
+    }
+    response = await chat_client.post(f"/api/v1/chat/{FAKE_PLANT_ID}", json=payload)
+    assert response.status_code == 422

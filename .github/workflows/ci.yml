@@ -43,7 +43,7 @@ jobs:
         run: uv pip install -r requirements-dev.txt --system
 
       - name: Ejecutar tests (excluye dbschema)
-        run: pytest -m "not dbschema" --cov=app --cov-report=term-missing -v
+        run: pytest -m "not dbschema" --cov=app --cov-report=term-missing --cov-fail-under=65 -v
 
   # ──────────────────────────────────────────────────────────────────
   # Job 2: Validación de estructura de BD con Postgres efímero

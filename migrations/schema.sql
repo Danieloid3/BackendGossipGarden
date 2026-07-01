@@ -19,6 +19,7 @@ CREATE TABLE users (
   user_id     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   username    VARCHAR     NOT NULL,
   email       VARCHAR     NOT NULL UNIQUE,
+  preferred_language VARCHAR DEFAULT 'es',
   created_at  TIMESTAMP   DEFAULT NOW()
 );
 
@@ -31,6 +32,7 @@ CREATE TABLE species (
   gbif_taxon_key   INTEGER,
   inaturalist_id   INTEGER,
   source_provider  TEXT        DEFAULT 'legacy_backfill',
+  origin           TEXT,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
@@ -178,7 +180,14 @@ CREATE TABLE plants (
   health_score       FLOAT,
   photo_storage_path   TEXT,
   last_health_check    TIMESTAMP,
+  last_eval_temp       TIMESTAMP,
+  last_eval_light      TIMESTAMP,
+  last_eval_air_hum    TIMESTAMP,
+  last_eval_soil_hum   TIMESTAMP,
   elevenlabs_voice_id  TEXT,
+  estimated_age_months INTEGER,
+  location             VARCHAR,
+  specific_care_tips   JSONB,
   created_at           TIMESTAMP DEFAULT NOW()
 );
 
@@ -197,6 +206,21 @@ CREATE TABLE events (
   message     TEXT      NOT NULL,
   created_at  TIMESTAMP DEFAULT NOW()
 );
+
+-- ============================================================
+-- NOTIFICACIONES PUSH (FCM)
+-- ============================================================
+
+CREATE TABLE device_tokens (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token        TEXT        NOT NULL UNIQUE,
+  platform     TEXT        CHECK (platform IN ('ios', 'android', 'web')),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_device_tokens_user_id ON device_tokens(user_id);
 
 -- ============================================================
 -- SOCIAL

@@ -89,7 +89,25 @@ Confidence thresholds: `< 0.25` → needs more photos; `0.25–0.75` → user se
 
 ### Chatbot pipeline (`/api/v1/chat/{plant_id}/*`)
 
-Load `ai_personality_prompt` from `species_ai_content` → load plant health state → load history from Redis (fallback: Firestore) → context compaction if > 3000 tokens (summarize old messages, keep last 6) → topic guardrails → OpenAI `gpt-4o` → store in Redis + Firestore.
+Load `ai_personality_prompt` from `species_ai_content` → load plant health state → load history from Redis (fallback: Firestore) → context compaction if > 3000 tokens (summarize old messages, keep last 6) → topic guardrails → OpenAI `gpt-4o` → store in Redis + Firestore → **push real-time via `notification_service.notify()`**.
+
+### Real-time notifications (`/api/v1/notifications/*`, `/api/v1/devices/*`)
+
+Two parallel channels fan out from a single point (`notification_service.notify()`):
+
+- **WebSocket** (`WS /notifications/ws?token=<jwt>`): in-memory `ConnectionManager` (`app/services/websocket_manager.py`) keeps per-user connections. JWT goes in query string because WS clients can't reliably set headers. Stateful — if you scale beyond one Railway instance, add Redis pub/sub.
+- **FCM** (`app/services/fcm_service.py`): wraps `firebase_admin.messaging`. Reads tokens from `device_tokens` table. Auto-cleans dead tokens on `UNREGISTERED`/`invalid-argument`.
+
+Trigger points:
+- Inside `chat_with_plant()` — pushes the bot's reply at the end. `send_fcm=False` for normal chat (user is already in-app), `send_fcm=True` for `is_proactive=True` (evaluator alerts).
+- The evaluator (`evaluator_service.py`) needs no changes — it already calls `chat_with_plant(is_proactive=True)` in a background task; the notify happens automatically when that completes.
+
+`notify()` swallows all errors so a push failure can't break the chat response.
+
+Endpoints:
+- `POST /devices` upserts an FCM token (`{ token, platform: ios|android|web }`)
+- `DELETE /devices/{token}` (logout)
+- `GET /notifications?limit=50` returns history from `events` table, filtered to plants owned by the user
 
 ---
 
@@ -107,6 +125,8 @@ Key constraints:
 - `plants.common_name` / `plants.scientific_name`: **join-derived fields**, not DB columns on `plants`. Fetched via `select('*, species(common_name, scientific_name)')` and flattened by `_flatten_species(row)`. Also excluded via `computed_fields` in the schema test.
 - `FIREBASE_STORAGE_BUCKET` must be `project-id.appspot.com` (no `gs://` prefix).
 - `DELETE /plants/{plant_id}`: returns 204; validates ownership (403 if not owner, 404 if not found).
+- `device_tokens`: stores FCM push tokens per user. `ON DELETE CASCADE` from `users`. Token `UNIQUE` — upsert on conflict to support re-login across users.
+- `events`: log-only (no `read_at`/`user_id`). To query events for a user you must join through `plants.user_id`.
 
 ---
 
@@ -158,3 +178,63 @@ See `.env.example` for the full list. Notable ones:
 - **Schema first**: Always read `migrations/schema.sql` before writing DB queries; column names and constraints define behavior.
 - **No direct Firestore/Redis access in endpoints**: Use service layer (`app/services/`) to isolate DB logic.
 - **Structured Output**: Identification and personality generation use OpenAI's `response_format` parameter — test with actual API calls, not mocks.
+
+---
+
+## ⚠️ Known Bugs — Backlog
+
+Issues identificados pero pendientes de corrección. Actualizados el 2026-06-25.
+
+### 🔴 Bug #3 — `POST /sensors/` sin autenticación ni validación de MAC
+**Archivo:** `app/api/v1/endpoints/sensors.py`
+
+El endpoint no requiere JWT y no valida que el `mac_address` del payload corresponda al registrado en la tabla `sensors` para esa planta. Cualquier agente externo que conozca un `plant_id` (UUID visible en respuestas de la API) puede enviar lecturas falsas y manipular el `health_score` + `health_status` de una planta ajena.
+
+**Mitigaciones pendientes:**
+1. Añadir validación: al recibir datos, verificar que `mac_address` (si se provee) coincide con el `mac_address` en la tabla `sensors` para ese `plant_id`.
+2. Considerar un API key por sensor en el header `X-Sensor-Key` para ambientes de producción.
+3. O habilitar IP whitelist a nivel de proxy/load balancer.
+
+---
+
+### 🔴 Bug #4 — Evaluador hace `SELECT *` de **todas** las plantas sin límite
+**Archivo:** `app/services/evaluator_service.py` → `evaluate_all_plants()`
+
+```python
+plants_res = supabase.table("plants").select("*").execute()  # ← sin LIMIT
+```
+
+El evaluador corre cada 10 minutos y carga la tabla `plants` completa en memoria del servidor, incluyendo `specific_care_tips` (JSONB potencialmente grande). Con escala (>1000 plantas) esto será una query costosa que puede causar OOM y timeouts.
+
+**Solución propuesta:** Paginar con `range()` o solo seleccionar las columnas necesarias (`plant_id, user_id, species_id, last_eval_temp, last_eval_light, last_eval_air_hum, last_eval_soil_hum`). Añadir paginación en lotes de 100-200 plantas.
+
+---
+
+### 🟡 Bug #6 — Alertas del evaluador se guardan con `type: "chat"` en vez de `"alert"`
+**Archivo:** `app/services/evaluator_service.py` → `handle_alerts()`
+
+```python
+supabase.table("events").insert({
+    "plant_id": plant_id,
+    "type": "chat",   # ← debería ser "alert"
+    ...
+})
+```
+
+El schema de la tabla `events` soporta `alert | insight | chat | system`, pero todos los eventos del evaluador se registran como `"chat"`. El frontend no puede distinguir una alerta crítica de sensor de una respuesta de conversación normal.
+
+**Solución propuesta:** Cambiar `"type": "chat"` a `"type": "alert"` en `handle_alerts()`. Revisar si el frontend ya filtra por tipo.
+
+---
+
+### 🟡 Bug #9 — Sistema de Friendships implementado en BD pero sin endpoints
+**Archivos:** `app/api/v1/endpoints/plants.py`, `app/api/v1/endpoints/` (ausente)
+
+La tabla `friendships` existe en `schema.sql` con soporte para `pending | accepted | blocked`. Su lógica de verificación ya está integrada en `GET /plants/`, `GET /plants/{id}/sensor-data/*` y `GET /plants/{id}/profile`. Sin embargo, no existe ningún endpoint para:
+- `POST /friendships/` — enviar solicitud
+- `GET /friendships/` — listar amigos y solicitudes pendientes
+- `PATCH /friendships/{id}` — aceptar/rechazar solicitud
+- `DELETE /friendships/{id}` — eliminar amistad
+
+La feature social está completamente bloqueada del lado del cliente.
+
