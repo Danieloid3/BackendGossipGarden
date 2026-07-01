@@ -236,7 +236,7 @@ async def generate_personalized_care_tips(
     return row
 
 @router.get("/", response_model=List[PlantResponse])
-async def get_plants(
+def get_plants(
     target_user_id: Optional[str] = None,
     current_user_id: str = Depends(get_current_user)
 ):

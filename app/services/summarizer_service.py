@@ -25,12 +25,21 @@ _SUMMARIZER_SYSTEM_PROMPT = "Eres un asistente especializado en resumir conversa
 
 
 def count_tokens(messages: list[dict]) -> int:
-    enc = tiktoken.get_encoding(_ENCODING)
-    total = 0
-    for msg in messages:
-        total += 4  # overhead por mensaje (rol + separadores)
-        total += len(enc.encode(msg.get("content", "")))
-    return total + 2  # overhead de reply
+    try:
+        enc = tiktoken.get_encoding(_ENCODING)
+        total = 0
+        for msg in messages:
+            total += 4  # overhead por mensaje (rol + separadores)
+            total += len(enc.encode(msg.get("content", "")))
+        return total + 2  # overhead de reply
+    except Exception as e:
+        logger.warning(f"Error cargando tiktoken (posible bloqueo de red): {e}. Usando heurística.")
+        total = 0
+        for msg in messages:
+            total += 4
+            total += len(msg.get("content", "")) // 4
+        return total + 2
+
 
 
 async def _call_summarizer(messages_to_summarize: list[dict], existing_summary: str) -> str:

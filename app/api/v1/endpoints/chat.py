@@ -69,6 +69,8 @@ async def send_message(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error procesando el mensaje: {str(e)}")
 
 
